@@ -145,7 +145,7 @@ if validated then
     print("[Fyy Loader] 🚀 Loading main script...")
     
     -- URL script utama GitHub
-    local MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/fyywannafly-sudo/panel/refs/heads/main/FyyCommunity"
+    local MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/fyywannafly-sudo/FyyCommunity/refs/heads/main/FISHIT%20LOADER"
     
     -- Load script utama
     local success, err = pcall(function()
