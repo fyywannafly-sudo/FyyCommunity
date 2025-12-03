@@ -1,4 +1,4 @@
--- FyyCommunity Loader (DEBUG)
+ -- FyyCommunity Loader (tanpa JSONDecode, parsing manual)
 local HttpService = game:GetService("HttpService")
 
 local API_URL = "https://loretta-metalline-bebe.ngrok-free.dev/validate"
@@ -22,47 +22,50 @@ local function validateKey()
         tostring(placeId)
     )
 
-    -- HTTP GET aman pakai pcall
+    -- HTTP GET + pcall
     local ok, response = pcall(function()
         return game:HttpGet(url)
     end)
 
     if not ok or not response or response == "" then
-        warn("[Fyy Loader] Gagal HttpGet ke server, response:")
-        warn(response)
-        error("[Fyy Loader] Tidak bisa menghubungi server validasi.")
+        if player then
+            player:Kick("[Fyy Loader] Tidak bisa menghubungi server validasi.")
+        end
         return
     end
 
-    -- DEBUG: lihat raw response
-    warn("[Fyy Loader] RAW RESPONSE DARI SERVER:")
-    warn(response)
+    -- DEBUG: liatin beberapa karakter awal biar tau bentuk respon
+    warn("[Fyy Loader] RAW RESPONSE (potongan):")
+    warn(string.sub(response, 1, 200))
 
-    -- Decode JSON dengan aman
-    local okDecode, dataOrErr = pcall(function()
-        return HttpService:JSONDecode(response)
-    end)
+    -- ===== PARSE MANUAL TANPA JSONDECODE =====
+    -- cari "status":"..."
+    local status = response:match([["status"%s*:%s*"(.-)"]])
+    -- cari "message":"..."
+    local message = response:match([["message"%s*:%s*"(.-)"]])
+    -- cari "code":"..."
+    local code = response:match([["code"%s*:%s*"(.-)"]])
 
-    if not okDecode or not dataOrErr then
-        warn("[Fyy Loader] JSONDecode gagal! Response barusan bukan JSON valid.")
-        error("[Fyy Loader] Response server tidak valid (cek console).")
+    if not status then
+        -- beneran bukan respon API kita
+        if player then
+            player:Kick("[Fyy Loader] Response server tidak valid.")
+        end
         return
     end
 
-    local data = dataOrErr
-
-    if data.status ~= "ok" then
-        -- DI SINI KEY SALAH / TIDAK DITEMUKAN / HWID MISMATCH / EXPIRED / DLL
-        error("[Fyy Loader] " .. (data.message or "Key error"))
+    if status ~= "ok" then
+        if player then
+            player:Kick("[Fyy Loader] " .. (message or "Key error (" .. (code or "UNKNOWN") .. ")"))
+        end
         return
     end
 
-    print("[Fyy Loader] Validation OK:", data.code, data.message)
+    print("[Fyy Loader] Validation OK:", code or "OK", message or "")
 end
 
 validateKey()
 
 print("[Fyy Loader] Script premium mulai jalan untuk key:", _G.script_key)
 
--- script utama kamu
 loadstring(game:HttpGet("https://raw.githubusercontent.com/fyywannafly-sudo/panel/refs/heads/main/FyyCommunity"))()
