@@ -1,0 +1,63 @@
+-- FyyCommunity.lua
+-- Loader utama: validasi key ke API, lalu jalankan script premium
+
+local HttpService = game:GetService("HttpService")
+
+-- GANTI ini pakai URL ngrok kamu (PAKAI /validate di belakang)
+local API_URL = "https://loretta-metalline-bebe.ngrok-free.dev/validate"
+
+local function validateKey()
+    if not _G.script_key then
+        error("[Fyy Loader] _G.script_key belum di-set")
+    end
+
+    local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
+    local player = game.Players.LocalPlayer
+    local robloxId = player and player.UserId or 0
+    local placeId = game.PlaceId
+
+    local url = string.format(
+        "%s?key=%s&hwid=%s&robloxId=%s&placeId=%s",
+        API_URL,
+        HttpService:UrlEncode(_G.script_key),
+        HttpService:UrlEncode(hwid),
+        tostring(robloxId),
+        tostring(placeId)
+    )
+
+    local response
+    local ok, err = pcall(function()
+        response = game:HttpGet(url)
+    end)
+
+    if not ok or not response then
+        if player then player:Kick("[Fyy Loader] Tidak bisa hubungi server validasi.") end
+        return
+    end
+
+    local data
+    ok, err = pcall(function()
+        data = HttpService:JSONDecode(response)
+    end)
+
+    if not ok or not data then
+        if player then player:Kick("[Fyy Loader] Response server tidak valid.") end
+        return
+    end
+
+    -- KALAU KEY SALAH / EXPIRED / HWID MISMATCH / BLACKLIST → KICK
+    if data.status ~= "ok" then
+        if player then
+            player:Kick("[Fyy Loader] " .. (data.message or "Key error"))
+        end
+        return
+    end
+
+    print("[Fyy Loader] Validation OK:", data.code, data.message)
+end
+
+validateKey()
+
+print("[Fyy Loader] Script premium mulai jalan untuk key:", _G.script_key)
+
+loadstring(game:HttpGet("https://raw.githubusercontent.com/fyywannafly-sudo/FyyCommunity/refs/heads/main/FISHIT%20LOADER"))()
