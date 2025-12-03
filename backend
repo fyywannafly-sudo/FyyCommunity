@@ -1,19 +1,34 @@
+-- ============================================
+-- FYY PREMIUM LOADER (Replit Edition)
+-- ============================================
 
 local HttpService = game:GetService("HttpService")
 
--- PASTIKAN ini sama persis dengan URL ngrok / server kamu
+-- URL API REplit lo (ganti dengan URL lo)
 local API_URL = "https://2cbe2093-9622-46ac-9234-c2157ec64dd8-00-cauxo43sz44y.pike.replit.dev/validate"
 
-local function validateKey()
-    if not _G.script_key then
-        error("[Fyy Loader] _G.script_key belum di-set")
-    end
+-- Jika URL di atas berubah, ganti dengan yang baru dari Replit Webview
 
+local function validateKey()
+    -- Cek apakah _G.script_key sudah di-set
+    if not _G.script_key then
+        error("[Fyy Loader] ERROR: _G.script_key belum di-set!")
+        return
+    end
+    
+    -- Get HWID dari Roblox
     local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
     local player = game.Players.LocalPlayer
     local robloxId = player and player.UserId or 0
     local placeId = game.PlaceId
-
+    
+    -- Debug info
+    print("[Fyy Loader] Validating...")
+    print("- Key:", _G.script_key)
+    print("- HWID:", hwid)
+    print("- API URL:", API_URL)
+    
+    -- Build URL dengan query parameters
     local url = string.format(
         "%s?key=%s&hwid=%s&robloxId=%s&placeId=%s",
         API_URL,
@@ -22,48 +37,128 @@ local function validateKey()
         tostring(robloxId),
         tostring(placeId)
     )
-
-    -- HttpGet dengan pcall yang bener
-    local ok, response = pcall(function()
-        return game:HttpGet(url)
+    
+    print("[Fyy Loader] Request URL:", url)
+    
+    -- HttpGet dengan error handling
+    local success, response = pcall(function()
+        return game:HttpGet(url, true)  -- true = async
     end)
-
-    if not ok or not response or response == "" then
+    
+    -- Check jika request gagal
+    if not success then
+        warn("[Fyy Loader] HTTP Request failed:", response)
         if player then
-            player:Kick("[Fyy Loader] Tidak bisa menghubungi server validasi.")
+            player:Kick("[Fyy Loader] 🔴 Gagal menghubungi server validasi.\nCek koneksi internet atau hubungi owner.")
         end
         return
     end
-
-    -- Decode JSON dengan aman
+    
+    if not response or response == "" then
+        warn("[Fyy Loader] Server returned empty response")
+        if player then
+            player:Kick("[Fyy Loader] 🔴 Server tidak merespon.")
+        end
+        return
+    end
+    
+    print("[Fyy Loader] Raw response:", string.sub(response, 1, 200) .. "...")
+    
+    -- Parse JSON response
     local data
-    ok, _ = pcall(function()
+    local decodeSuccess, decodeError = pcall(function()
         data = HttpService:JSONDecode(response)
     end)
-
-    if not ok or not data then
-        warn("[Fyy Loader] Response server tidak valid, RAW:")
-        warn(response) -- biar kalau temen lu SS console, keliatan isinya apa
+    
+    if not decodeSuccess then
+        warn("[Fyy Loader] JSON Decode failed:", decodeError)
+        warn("Full response:", response)
         if player then
-            player:Kick("[Fyy Loader] Response server tidak valid.")
+            player:Kick("[Fyy Loader] 🔴 Response server tidak valid.")
         end
         return
     end
-
-    -- Kalau status bukan "ok" → kick dengan message dari server
-    if data.status ~= "ok" then
-        if player then
-            player:Kick("[Fyy Loader] " .. (data.message or "Key error"))
-        end
-        return
+    
+    -- Debug response
+    print("[Fyy Loader] Parsed response:")
+    for k, v in pairs(data) do
+        print("  " .. k .. ":", v)
     end
-
-    print("[Fyy Loader] Validation OK:", data.code, data.message)
+    
+    -- Check validation result
+    if data.status == "ok" then
+        print("[Fyy Loader] ✅ Validation SUCCESS!")
+        print("- Code:", data.code)
+        print("- Message:", data.message)
+        
+        -- Jika first bind, beri tahu user
+        if data.code == "FIRST_BIND" then
+            print("[Fyy Loader] ⭐ FIRST BIND: HWID berhasil diikat ke device ini.")
+        end
+        
+        return true
+    else
+        print("[Fyy Loader] ❌ Validation FAILED!")
+        print("- Error Code:", data.code)
+        print("- Message:", data.message)
+        
+        -- Kick player dengan pesan error
+        if player then
+            local kickMessage = "[Fyy Loader] "
+            
+            if data.code == "INVALID_KEY" then
+                kickMessage = kickMessage .. "🔑 Key tidak valid / tidak ditemukan."
+            elseif data.code == "BLACKLISTED" then
+                kickMessage = kickMessage .. "⛔ Key diblacklist. Hubungi owner."
+            elseif data.code == "EXPIRED" then
+                kickMessage = kickMessage .. "⌛ Key sudah expired."
+            elseif data.code == "HWID_MISMATCH" then
+                kickMessage = kickMessage .. "💻 HWID tidak cocok.\nReset HWID di panel Discord dulu."
+            else
+                kickMessage = kickMessage .. (data.message or "Key error")
+            end
+            
+            player:Kick(kickMessage)
+        end
+        return false
+    end
 end
 
-validateKey()
+-- ============================================
+-- EXECUTION
+-- ============================================
 
-print("[Fyy Loader] Script premium mulai jalan untuk key:", _G.script_key)
+print("[Fyy Loader] ==================================")
+print("[Fyy Loader] 🔥 FYY PREMIUM LOADER STARTING 🔥")
+print("[Fyy Loader] ==================================")
 
--- load script utama kamu
-loadstring(game:HttpGet("https://raw.githubusercontent.com/fyywannafly-sudo/panel/refs/heads/main/FyyCommunity"))()
+-- Tunggu player jika belum ada
+if not game.Players.LocalPlayer then
+    game.Players.PlayerAdded:Wait()
+end
+
+-- Validasi key
+local validated = validateKey()
+
+-- Jika validasi sukses, load script utama
+if validated then
+    print("[Fyy Loader] 🚀 Loading main script...")
+    
+    -- URL script utama GitHub
+    local MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/fyywannafly-sudo/panel/refs/heads/main/FyyCommunity"
+    
+    -- Load script utama
+    local success, err = pcall(function()
+        loadstring(game:HttpGet(MAIN_SCRIPT_URL))()
+    end)
+    
+    if not success then
+        warn("[Fyy Loader] ❌ Gagal load main script:", err)
+    else
+        print("[Fyy Loader] ✅ Main script loaded successfully!")
+    end
+else
+    print("[Fyy Loader] ❌ Validation failed, script tidak di-load.")
+end
+
+print("[Fyy Loader] ==================================")
