@@ -1,201 +1,69 @@
+
 local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
 
--- PASTIKAN ini sama persis dengan URL server kamu (ngrok / VPS)
--- JANGAN pakai /validate/usn/register, tapi langsung /validate
-local API_BASE_URL = "https://panel-mount-production.up.railway.app"
+-- PASTIKAN ini sama persis dengan URL ngrok / server kamu
+local API_URL = "https://panel-mount-production.up.railway.app:3000/validate"
 
-local player = Players.LocalPlayer
-local playerName = player and player.Name or "Unknown"
-
--- Function untuk validasi USN
-local function validateUsn()
+local function validateKey()
     if not _G.script_key then
         error("[Fyy Loader] _G.script_key belum di-set")
     end
-    
-    print("[Fyy Loader] Memulai validasi USN untuk player:", playerName)
-    print("[Fyy Loader] Key:", _G.script_key)
-    
-    -- Bangun URL dengan parameter query (sesuai server.js baru)
-    local params = {
-        key = _G.script_key,
-        usn = playerName, -- USN = Roblox username
-        robloxId = tostring(player.UserId),
-        placeId = tostring(game.PlaceId)
-    }
-    
-    -- Encode parameters untuk URL
-    local queryString = ""
-    for k, v in pairs(params) do
-        queryString = queryString .. (queryString == "" and "?" or "&")
-        queryString = queryString .. k .. "=" .. HttpService:UrlEncode(v)
-    end
-    
-    local fullUrl = API_BASE_URL .. "/validate" .. queryString
-    
-    print("[Fyy Loader] Mengirim request ke:", fullUrl)
-    
-    -- Kirim request GET ke server
-    local success, response = pcall(function()
-        return HttpService:GetAsync(fullUrl, false) -- false = non-asynchronous
+
+    local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
+    local player = game.Players.LocalPlayer
+    local robloxId = player and player.UserId or 0
+    local placeId = game.PlaceId
+
+    local url = string.format(
+        "%s?key=%s&hwid=%s&robloxId=%s&placeId=%s",
+        API_URL,
+        HttpService:UrlEncode(_G.script_key),
+        HttpService:UrlEncode(hwid),
+        tostring(robloxId),
+        tostring(placeId)
+    )
+
+    -- HttpGet dengan pcall yang bener
+    local ok, response = pcall(function()
+        return game:HttpGet(url)
     end)
-    
-    if not success then
-        warn("[Fyy Loader] ❌ Gagal koneksi ke API:", response)
-        player:Kick("[Fyy Loader] Gagal menghubungi server validasi.\nCoba lagi nanti atau hubungi admin.")
-        return false
+
+    if not ok or not response or response == "" then
+        if player then
+            player:Kick("[Fyy Loader] Tidak bisa menghubungi server validasi.")
+        end
+        return
     end
-    
-    -- Parse response JSON
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(response)
+
+    -- Decode JSON dengan aman
+    local data
+    ok, _ = pcall(function()
+        data = HttpService:JSONDecode(response)
     end)
-    
-    if not ok then
-        warn("[Fyy Loader] ❌ Gagal parse response:", response)
-        player:Kick("[Fyy Loader] Server response tidak valid.")
-        return false
-    end
-    
-    print("[Fyy Loader] Response:", data.status, data.code)
-    
-    -- Handle berbagai response code
-    if data.status == "ok" then
-        -- SUCCESS CASES
-        if data.code == "OK" or data.code == "FIRST_BIND" then
-            print("[Fyy Loader] ✅ Validasi berhasil!")
-            print("[Fyy Loader] Code:", data.code)
-            print("[Fyy Loader] Message:", data.message)
-            
-            -- Jika ada slot info, tampilkan
-            if data.data and data.data.slotInfo then
-                print("[Fyy Loader] Slot Info:", data.data.slotInfo)
-            end
-            
-            return true
+
+    if not ok or not data then
+        warn("[Fyy Loader] Response server tidak valid, RAW:")
+        warn(response) -- biar kalau temen lu SS console, keliatan isinya apa
+        if player then
+            player:Kick("[Fyy Loader] Response server tidak valid.")
         end
-    elseif data.status == "error" then
-        -- ERROR CASES
-        local errorMsg = data.message or "Unknown error"
-        local errorCode = data.code or "UNKNOWN"
-        
-        print("[Fyy Loader] ❌ Validasi gagal:", errorCode, "-", errorMsg)
-        
-        -- Handle specific error codes
-        if errorCode == "USN_MISMATCH" then
-            player:Kick("[Fyy Loader] Username ini sudah dipakai di key lain!\nGunakan username berbeda atau minta admin untuk reset.")
-        elseif errorCode == "SLOT_FULL" then
-            player:Kick("[Fyy Loader] Slot USN penuh! Hubungi admin di Discord untuk tambah slot.")
-        elseif errorCode == "EXPIRED" then
-            player:Kick("[Fyy Loader] Key sudah expired. Hubungi owner untuk perpanjang.")
-        elseif errorCode == "BLACKLISTED" then
-            player:Kick("[Fyy Loader] Key diblacklist. Hubungi owner untuk info lebih lanjut.")
-        elseif errorCode == "INVALID_KEY" then
-            player:Kick("[Fyy Loader] Key tidak valid.\nPastikan sudah redeem key di Discord!")
-        elseif errorCode == "NOT_BOUND" then
-            player:Kick("[Fyy Loader] Key belum di-redeem. Redeem dulu di Discord server!")
-        else
-            player:Kick("[Fyy Loader] Error: " .. errorMsg)
-        end
-        return false
+        return
     end
-    
-    -- Fallback
-    warn("[Fyy Loader] Response tidak dikenali:", response)
-    player:Kick("[Fyy Loader] Server response tidak dikenali.")
-    return false
-end
 
--- Function untuk cek info key (optional, untuk debug)
-local function checkKeyInfo()
-    if not _G.script_key then return end
-    
-    local url = API_BASE_URL .. "/key/" .. HttpService:UrlEncode(_G.script_key)
-    
-    local success, response = pcall(function()
-        return HttpService:GetAsync(url, false)
-    end)
-    
-    if success and response then
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(response)
-        end)
-        
-        if ok and data.status == "ok" then
-            print("[Fyy Loader] 🔍 Info Key:")
-            print("  • Key:", data.data.key)
-            print("  • Role ID:", data.data.roleId or "Default")
-            print("  • USN Resets:", data.data.usnResets or 0)
-            print("  • Expired:", data.data.expiresAt or "Permanent")
-            print("  • Blacklisted:", data.data.blacklisted and "✅" or "❌")
-            print("  • Has USN:", data.data.hasUsn and "✅" or "❌")
-            print("  • System:", data.data.system or "Unknown")
+    -- Kalau status bukan "ok" → kick dengan message dari server
+    if data.status ~= "ok" then
+        if player then
+            player:Kick("[Fyy Loader] " .. (data.message or "Key error"))
         end
+        return
     end
+
+    print("[Fyy Loader] Validation OK:", data.code, data.message)
 end
 
--- Function untuk cek slot info (optional)
-local function checkSlotInfo(userId)
-    if not userId then return end
-    
-    local url = API_BASE_URL .. "/slots/" .. tostring(userId)
-    
-    local success, response = pcall(function()
-        return HttpService:GetAsync(url, false)
-    end)
-    
-    if success and response then
-        local ok, data = pcall(function()
-            return HttpService:JSONDecode(response)
-        end)
-        
-        if ok and data.status == "ok" then
-            print("[Fyy Loader] 📊 Slot Info:")
-            print("  • User ID:", data.data.userId)
-            print("  • Total Slots:", data.data.totalSlots)
-            print("  • Used Keys:", data.data.usedKeys)
-            print("  • Available Slots:", data.data.availableSlots)
-            print("  • Can Add More:", data.data.canAddMore and "✅" or "❌")
-        end
-    end
-end
+validateKey()
 
--- Main execution
-print("[Fyy Loader] ================================")
-print("[Fyy Loader] FYY PREMIUM LOADER - USN SYSTEM v2")
-print("[Fyy Loader] ================================")
+print("[Fyy Loader] Script premium mulai jalan untuk key:", _G.script_key)
 
--- Cek apakah script_key ada
-if not _G.script_key then
-    player:Kick("[Fyy Loader] Script key tidak ditemukan.\nGunakan script dari panel Discord!")
-    return
-end
-
--- Optional: Debug info
--- checkKeyInfo()
--- checkSlotInfo(player.UserId)
-
--- Validasi USN
-local isValid = validateUsn()
-
-if not isValid then
-    return -- Sudah di-kick di dalam function
-end
-
-print("[Fyy Loader] ================================")
-print("[Fyy Loader] ✅ Validasi sukses! Memuat script...")
-print("[Fyy Loader] ================================")
-
--- Tunggu sebentar sebelum load script utama
-wait(1)
-
--- Load script utama kamu
-local success, err = pcall(function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/fyywannafly-sudo/FyyCommunity/refs/heads/main/MT_LOADER"))()
-end)
-
-if not success then
-    warn("[Fyy Loader] Gagal load script utama:", err)
-    player:Kick("[Fyy Loader] Gagal load script utama. Coba lagi nanti.")
-end
+-- load script utama kamu
+loadstring(game:HttpGet("https://raw.githubusercontent.com/fyywannafly-sudo/FyyCommunity/refs/heads/main/MT_LOADER"))()
