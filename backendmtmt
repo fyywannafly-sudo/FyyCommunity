@@ -2,7 +2,7 @@
 local HttpService = game:GetService("HttpService")
 
 -- PASTIKAN ini sama persis dengan URL ngrok / server kamu
-local API_URL = "https://panel-mount-production.up.railway.app:3000/validate"
+local API_URL = "https://panel-mount-production.up.railway.app"
 
 local function validateKey()
     if not _G.script_key then
