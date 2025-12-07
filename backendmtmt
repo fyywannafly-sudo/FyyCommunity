@@ -3,7 +3,7 @@ local Players = game:GetService("Players")
 
 -- PASTIKAN ini sama persis dengan URL server kamu (ngrok / VPS)
 -- JANGAN pakai /validate/usn/register, tapi langsung /validate
-local API_BASE_URL = "http://151.240.0.25:3000"
+local API_BASE_URL = "http://151.240.0.25:3001"
 
 local player = Players.LocalPlayer
 local playerName = player and player.Name or "Unknown"
