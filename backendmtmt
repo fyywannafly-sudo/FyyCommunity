@@ -1,0 +1,188 @@
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+-- PASTIKAN ini sama persis dengan URL server kamu (ngrok / VPS)
+local API_BASE_URL = "http:localhost:3000"
+
+-- USN SYSTEM ENDPOINTS
+local REGISTER_ENDPOINT = API_BASE_URL .. "/usn/register"
+local VALIDATE_ENDPOINT = API_BASE_URL .. "/usn/validate"
+
+local player = Players.LocalPlayer
+local playerName = player and player.Name or "Unknown"
+
+-- Function untuk kirim request ke API
+local function apiRequest(endpoint, method, body)
+    method = method or "POST"
+    
+    local success, response = pcall(function()
+        return HttpService:RequestAsync({
+            Url = endpoint,
+            Method = method,
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = body and HttpService:JSONEncode(body) or nil
+        })
+    end)
+    
+    if not success then
+        warn("[Fyy Loader] Gagal koneksi ke API:", response)
+        return nil, "Connection failed"
+    end
+    
+    -- Cek status code
+    if response.Success then
+        local data
+        success, data = pcall(function()
+            return HttpService:JSONDecode(response.Body)
+        end)
+        
+        if success then
+            return data, nil
+        else
+            warn("[Fyy Loader] Gagal parse response:", response.Body)
+            return nil, "Invalid response"
+        end
+    else
+        warn("[Fyy Loader] API error:", response.StatusCode, response.Body)
+        return nil, "API error: " .. tostring(response.StatusCode)
+    end
+end
+
+-- Function utama untuk validasi USN
+local function validateUsn()
+    if not _G.script_key then
+        error("[Fyy Loader] _G.script_key belum di-set")
+    end
+    
+    print("[Fyy Loader] Memulai validasi USN untuk player:", playerName)
+    print("[Fyy Loader] Key:", _G.script_key)
+    
+    -- Data untuk API
+    local requestData = {
+        key = _G.script_key,
+        usn = playerName,
+        robloxId = player.UserId,
+        placeId = game.PlaceId
+    }
+    
+    -- STEP 1: COBA VALIDASI DULU (apakah USN sudah terdaftar?)
+    print("[Fyy Loader] Mencoba validasi USN...")
+    local validateData, validateError = apiRequest(VALIDATE_ENDPOINT, "POST", requestData)
+    
+    if validateData then
+        -- Jika validasi sukses
+        if validateData.status == "ok" then
+            print("[Fyy Loader] ✅ Validasi berhasil!")
+            print("[Fyy Loader] USN:", validateData.data.usn)
+            print("[Fyy Loader] Slot:", validateData.data.usedSlots .. "/" .. validateData.data.maxSlots)
+            return true
+        end
+    end
+    
+    -- STEP 2: JIKA VALIDASI GAGAL, COBA REGISTER
+    print("[Fyy Loader] ❌ Validasi gagal, mencoba register USN baru...")
+    local registerData, registerError = apiRequest(REGISTER_ENDPOINT, "POST", requestData)
+    
+    if registerData then
+        if registerData.status == "ok" then
+            -- Register berhasil
+            print("[Fyy Loader] ✅ USN berhasil diregister!")
+            print("[Fyy Loader] USN:", registerData.data.usn)
+            print("[Fyy Loader] Slot:", registerData.data.usedSlots .. "/" .. registerData.data.maxSlots)
+            return true
+        else
+            -- Register gagal dengan error spesifik
+            local errorMsg = registerData.message or "Unknown error"
+            local errorCode = registerData.code or "UNKNOWN"
+            
+            print("[Fyy Loader] ❌ Register gagal:", errorCode, "-", errorMsg)
+            
+            -- Kasus-khusus handling
+            if errorCode == "SLOT_FULL" then
+                player:Kick("[Fyy Loader] Slot USN penuh! Hubungi admin di Discord untuk tambah slot.")
+            elseif errorCode == "USN_ALREADY_REGISTERED" then
+                player:Kick("[Fyy Loader] Username ini sudah dipakai di key lain!")
+            elseif errorCode == "EXPIRED" then
+                player:Kick("[Fyy Loader] Key sudah expired. Hubungi owner untuk perpanjang.")
+            elseif errorCode == "BLACKLISTED" then
+                player:Kick("[Fyy Loader] Key diblacklist. Hubungi owner untuk info lebih lanjut.")
+            elseif errorCode == "NOT_BOUND" then
+                player:Kick("[Fyy Loader] Key belum di-redeem. Redeem dulu di Discord server!")
+            else
+                player:Kick("[Fyy Loader] Error: " .. errorMsg)
+            end
+            return false
+        end
+    else
+        -- Gagal koneksi ke server
+        print("[Fyy Loader] ❌ Gagal menghubungi server API")
+        player:Kick("[Fyy Loader] Gagal menghubungi server validasi.\nCoba lagi nanti atau hubungi admin.")
+        return false
+    end
+end
+
+-- Function untuk check info key (optional, untuk debug)
+local function checkKeyInfo()
+    if not _G.script_key then return end
+    
+    local url = API_BASE_URL .. "/usn/info?key=" .. HttpService:UrlEncode(_G.script_key) .. "&usn=" .. HttpService:UrlEncode(playerName)
+    
+    local success, response = pcall(function()
+        return game:HttpGet(url)
+    end)
+    
+    if success and response then
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(response)
+        end)
+        
+        if ok and data.status == "ok" then
+            print("[Fyy Loader] Info Key:")
+            print("  • Total USN terdaftar:", data.data.totalRegistered)
+            print("  • Slot maksimal:", data.data.maxUsnSlots)
+            print("  • USN ini terdaftar:", data.data.usnRegistered and "✅" or "❌")
+            print("  • Expired:", data.data.expiresAt or "Permanent")
+            print("  • Blacklisted:", data.data.blacklisted and "✅" or "❌")
+        end
+    end
+end
+
+-- Main execution
+print("[Fyy Loader] ================================")
+print("[Fyy Loader] FYY PREMIUM LOADER - USN SYSTEM")
+print("[Fyy Loader] ================================")
+
+-- Cek apakah script_key ada
+if not _G.script_key then
+    player:Kick("[Fyy Loader] Script key tidak ditemukan.\nGunakan script dari panel Discord!")
+    return
+end
+
+-- Validasi USN
+local isValid = validateUsn()
+
+if not isValid then
+    return -- Sudah di-kick di dalam function
+end
+
+-- Optional: Check info key (debug mode)
+-- checkKeyInfo()
+
+print("[Fyy Loader] ================================")
+print("[Fyy Loader] ✅ Validasi sukses! Memuat script...")
+print("[Fyy Loader] ================================")
+
+-- Tunggu sebentar sebelum load script utama
+wait(1)
+
+-- Load script utama kamu
+local success, err = pcall(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/fyywannafly-sudo/FyyCommunity/refs/heads/main/MT%20LOADER"))()
+end)
+
+if not success then
+    warn("[Fyy Loader] Gagal load script utama:", err)
+    player:Kick("[Fyy Loader] Gagal load script utama. Coba lagi nanti.")
+end
