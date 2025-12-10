@@ -1,8 +1,7 @@
 -- ================================
 -- FYY PREMIUM LOADER (SIMPLE VERSION)
--- ================================
 -- Base URL: http://151.240.0.25:3000
--- Version: 2.0.0
+-- Version: 2.1.0
 -- ================================
 
 local HttpService = game:GetService("HttpService")
@@ -14,7 +13,6 @@ local Players = game:GetService("Players")
 local BASE_URL = "http://151.240.0.25:3000"
 local VALIDATE_URL = BASE_URL .. "/validate"
 local SCRIPT_URL = BASE_URL .. "/script"
-local MYIP_URL = BASE_URL .. "/myip"
 
 -- ================================
 -- UTILITY FUNCTIONS
@@ -45,7 +43,7 @@ local function getPlayerInfo()
 end
 
 local function getHWID()
-    -- Gunakan HWID dari RbxAnalyticsService jika ada
+    -- Coba dapatkan HWID dari RbxAnalyticsService
     local success, hwid = pcall(function()
         return game:GetService("RbxAnalyticsService"):GetClientId()
     end)
@@ -69,7 +67,7 @@ local function getHWID()
         hash = (hash * 31 + string.byte(combined, i)) % 1000000000
     end
     
-    return "ROBLOX_CUSTOM_" .. string.upper(string.format("%08x", hash))
+    return "ROBLOX_" .. string.upper(string.format("%08x", hash))
 end
 
 -- ================================
@@ -86,32 +84,27 @@ local function validateKey()
     local key = tostring(_G.script_key):upper()
     log("Validating key: " .. string.sub(key, 1, 8) .. "...", "info")
     
-    -- Dapatkan informasi user untuk logging
+    -- Dapatkan informasi user
     local playerInfo = getPlayerInfo()
     local hwid = getHWID()
     local placeId = game.PlaceId
-    local gameId = game.GameId
     
-    log(string.format("User: %s (@%s) | UID: %s", 
-        playerInfo.DisplayName, playerInfo.Username, playerInfo.UserId), "info")
-    log("HWID: " .. hwid, "debug")
+    log(string.format("User: %s (@%s)", 
+        playerInfo.DisplayName, playerInfo.Username), "info")
     
-    -- Buat URL validasi dengan informasi lengkap untuk logging
+    -- Buat URL validasi
     local url = string.format(
-        "%s?key=%s&hwid=%s&robloxId=%s&username=%s&displayName=%s&placeId=%s&gameId=%s",
+        "%s?key=%s&hwid=%s&robloxId=%s&username=%s&displayName=%s&placeId=%s",
         VALIDATE_URL,
         HttpService:UrlEncode(key),
         HttpService:UrlEncode(hwid),
         playerInfo.UserId,
         HttpService:UrlEncode(playerInfo.Username),
         HttpService:UrlEncode(playerInfo.DisplayName),
-        placeId,
-        gameId
+        placeId
     )
     
-    log("Mengirim request ke server...", "info")
-    
-    -- Kirim request ke server
+    -- Kirim request ke server (URL disembunyikan dari log)
     local success, response = pcall(function()
         return game:HttpGetAsync(url, true)
     end)
@@ -125,8 +118,6 @@ local function validateKey()
         return false
     end
     
-    log("Response: " .. string.sub(response, 1, 200), "debug")
-    
     -- Decode JSON response
     local data
     success, _ = pcall(function()
@@ -134,7 +125,7 @@ local function validateKey()
     end)
     
     if not success or not data then
-        log("Response JSON tidak valid", "error")
+        log("Response tidak valid", "error")
         if Players.LocalPlayer then
             Players.LocalPlayer:Kick("[Fyy] ❌ Server response error.")
         end
@@ -148,7 +139,6 @@ local function validateKey()
             log("HWID berhasil diikat ke key ini", "info")
         elseif data.code == "OK" then
             log("✅ KEY VALID", "success")
-            log("HWID cocok, akses diberikan", "info")
         end
         return true
     elseif data.status == "error" then
@@ -163,12 +153,8 @@ local function validateKey()
         elseif data.code == "EXPIRED" then
             errorMessage = "Key sudah expired"
         elseif data.code == "HWID_MISMATCH" then
-            errorMessage = "Key sudah terikat ke device lain. Hubungi owner untuk reset."
-        elseif data.code == "MISSING_PARAMS" then
-            errorMessage = "Parameter tidak lengkap"
+            errorMessage = "Key sudah terikat ke device lain."
         end
-        
-        log("Alasan: " .. errorMessage, "error")
         
         if Players.LocalPlayer then
             Players.LocalPlayer:Kick("[Fyy] ❌ " .. errorMessage)
@@ -179,13 +165,13 @@ local function validateKey()
     
     log("Response tidak dikenali", "error")
     if Players.LocalPlayer then
-        Players.LocalPlayer:Kick("[Fyy] ❌ Error tidak diketahui dari server.")
+        Players.LocalPlayer:Kick("[Fyy] ❌ Error tidak diketahui.")
     end
     return false
 end
 
 -- ================================
--- SCRIPT LOADING FUNCTION
+-- SCRIPT LOADING FUNCTION (FIXED)
 -- ================================
 
 local function loadPremiumScript()
@@ -195,13 +181,13 @@ local function loadPremiumScript()
     end
     
     local key = tostring(_G.script_key):upper()
-    log("Memuat script premium untuk key: " .. string.sub(key, 1, 8) + "...", "info")
+    log("Memuat script premium...", "info")
     
-    -- Dapatkan HWID
+    -- Dapatkan informasi
     local hwid = getHWID()
     local playerInfo = getPlayerInfo()
     
-    -- Buat URL untuk download script dengan key dan HWID
+    -- Buat URL untuk download script (URL disembunyikan)
     local downloadUrl = string.format(
         "%s?key=%s&hwid=%s&robloxId=%s&username=%s",
         SCRIPT_URL,
@@ -211,9 +197,7 @@ local function loadPremiumScript()
         HttpService:UrlEncode(playerInfo.Username)
     )
     
-    log("Downloading script dari server...", "info")
-    
-    -- Download script
+    -- Download script (tanpa log URL)
     local success, scriptContent = pcall(function()
         return game:HttpGetAsync(downloadUrl, true)
     end)
@@ -221,15 +205,7 @@ local function loadPremiumScript()
     if not success or not scriptContent then
         log("Gagal download script", "error")
         
-        local errorMsg = scriptContent or "Unknown error"
-        
-        if errorMsg:find("403") or errorMsg:find("Forbidden") then
-            errorMsg = "Akses ditolak. Key tidak valid atau expired."
-        elseif errorMsg:find("404") then
-            errorMsg = "Script tidak ditemukan di server."
-        elseif errorMsg:find("Key required") then
-            errorMsg = "Key diperlukan untuk akses script."
-        end
+        local errorMsg = "Gagal terhubung ke server"
         
         if Players.LocalPlayer then
             Players.LocalPlayer:Kick("[Fyy] ❌ " .. errorMsg)
@@ -239,10 +215,10 @@ local function loadPremiumScript()
     end
     
     -- Cek jika response adalah error message
-    if scriptContent:find("^%-%- ") and scriptContent:find("Key required") then
-        log("Akses ditolak oleh server", "error")
+    if scriptContent:find("^%-%- ") and (scriptContent:find("Key required") or scriptContent:find("Invalid")) then
+        log("Akses ditolak", "error")
         if Players.LocalPlayer then
-            Players.LocalPlayer:Kick("[Fyy] ❌ Akses ditolak. Key tidak valid.")
+            Players.LocalPlayer:Kick("[Fyy] ❌ Akses ditolak.")
         end
         return false
     end
@@ -252,16 +228,20 @@ local function loadPremiumScript()
     -- Execute script
     log("Executing script...", "info")
     
-    success, errorMsg = pcall(function()
-        loadstring(scriptContent)()
+    local execSuccess, errorMsg = pcall(function()
+        local fn, err = loadstring(scriptContent)
+        if fn then
+            fn()
+        else
+            error(err or "Failed to load script")
+        end
     end)
     
-    if not success then
-        log("❌ Error execute script: " .. errorMsg, "error")
+    if not execSuccess then
+        log("❌ Error execute script", "error")
         
-        -- Optional: Report error ke server untuk debugging
         if Players.LocalPlayer then
-            Players.LocalPlayer:Kick("[Fyy] ❌ Error load script. Silakan coba lagi.")
+            Players.LocalPlayer:Kick("[Fyy] ❌ Error load script.")
         end
         return false
     end
@@ -271,42 +251,16 @@ local function loadPremiumScript()
 end
 
 -- ================================
--- BONUS: CHECK SERVER STATUS
--- ================================
-
-local function checkServerStatus()
-    log("Checking server status...", "info")
-    
-    local success, response = pcall(function()
-        return game:HttpGetAsync(MYIP_URL, true)
-    end)
-    
-    if success and response then
-        local data = HttpService:JSONDecode(response)
-        log("Server IP: " .. (data.yourIP or "N/A"), "info")
-        log("Server status: ONLINE", "success")
-        return true
-    else
-        log("Server status: OFFLINE", "error")
-        return false
-    end
-end
-
--- ================================
 -- MAIN EXECUTION
 -- ================================
 
 -- Jalankan loader
-log("🚀 Fyy Premium Loader v2.0.0", "success")
-log("Base URL: " .. BASE_URL, "info")
-
--- Check server status (optional)
-checkServerStatus()
+log("🚀 Fyy Premium Loader v2.1.0", "success")
 
 -- Validasi key terlebih dahulu
 local isValid = validateKey()
 if not isValid then
-    return  -- Stop jika key invalid
+    return
 end
 
 -- Load script premium
@@ -314,18 +268,11 @@ loadPremiumScript()
 
 -- Notifikasi sukses
 log("🎉 Fyy Premium berhasil diaktifkan!", "success")
-log("Key: " .. string.sub(tostring(_G.script_key):upper(), 1, 8) .. "...", "info")
 log("User: @" .. Players.LocalPlayer.Name, "info")
 
 -- ================================
--- EXPOSE FUNCTIONS GLOBAL (Optional)
+-- CLEAN UP (Hapus key dari memory setelah digunakan)
 -- ================================
-_G.FyyPremium = {
-    Validate = validateKey,
-    LoadScript = loadPremiumScript,
-    CheckServer = checkServerStatus,
-    GetHWID = getHWID,
-    Version = "2.0.0"
-}
-
-log("Fyy Premium functions exposed to _G.FyyPremium", "info")
+task.wait(1)
+_G.script_key = nil
+log("Clean up completed", "info")
