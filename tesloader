@@ -11,7 +11,7 @@ local VALIDATE_URL = BASE_URL .. "/validate"
 local SCRIPT_URL = BASE_URL .. SECRET_ENDPOINT
 
 -- SETTINGS
-local ENABLE_LOGS = true -- Set false untuk hide semua print
+local ENABLE_LOGS = false -- Set false untuk hide semua print
 local MAX_RETRIES = 3
 local RETRY_DELAY = 2
 
