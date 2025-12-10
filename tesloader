@@ -1,68 +1,113 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 -- ================================
--- CONFIGURATION (GANTI INI SESUAI SERVER)
+-- CONFIGURATION
 -- ================================
-local BASE_URL = "http://localhost:3000"  -- Ganti dengan IP server kamu
-local SECRET_ENDPOINT = "/IYASKIDKNTLFYYHERE"  -- SAMA DENGAN YANG DI SERVER!
+local BASE_URL = "http://localhost:3000"
+local SECRET_ENDPOINT = "/AWOKAWOKZXZXZ"
 local VALIDATE_URL = BASE_URL .. "/validate"
 local SCRIPT_URL = BASE_URL .. SECRET_ENDPOINT
 
+-- SETTINGS
+local ENABLE_LOGS = false -- Set false untuk hide semua print
+local MAX_RETRIES = 3
+local RETRY_DELAY = 2
+
 -- ================================
--- HWID FUNCTION
+-- UTILITY FUNCTIONS
 -- ================================
+local function log(...)
+    if ENABLE_LOGS then
+        print("[Fyy Loader]", ...)
+    end
+end
+
+local function safeWait(seconds)
+    local start = tick()
+    while tick() - start < seconds do
+        RunService.Heartbeat:Wait()
+    end
+end
+
 local function getHWID()
-    -- Method 1: RbxAnalyticsService (recommended)
-    local success, hwid = pcall(function()
-        return game:GetService("RbxAnalyticsService"):GetClientId()
+    local hwid
+    local success = pcall(function()
+        hwid = game:GetService("RbxAnalyticsService"):GetClientId()
     end)
     
     if success and hwid and hwid ~= "" then
         return hwid
     end
     
-    -- Method 2: Alternative jika method 1 gagal
-    local success2, hwid2 = pcall(function()
-        return game:GetService("HttpService"):GenerateGUID(false)
+    -- Fallback method
+    pcall(function()
+        hwid = game:GetService("HttpService"):GenerateGUID(false)
     end)
     
-    if success2 then
-        return hwid2
+    return hwid or "HWID-" .. tostring(tick())
+end
+
+-- ================================
+-- WAIT FOR GAME READY
+-- ================================
+local function waitForGameReady()
+    local attempts = 0
+    local maxAttempts = 30 -- 30 detik maksimal
+    
+    while attempts < maxAttempts do
+        local player = Players.LocalPlayer
+        local character = player and player.Character
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        
+        -- Cek apakah game sudah siap
+        if player and player.UserId > 0 and game.PlaceId > 0 then
+            -- Optional: tunggu character load juga
+            if character and humanoid then
+                log("✅ Game ready - Player loaded")
+                return true
+            elseif attempts > 10 then -- Tunggu 10 attempt untuk character
+                log("⚠️ Game ready, character still loading")
+                return true
+            end
+        end
+        
+        attempts += 1
+        log("⏳ Waiting for game... (" .. attempts .. "/" .. maxAttempts .. ")")
+        safeWait(1)
     end
     
-    -- Method 3: Fallback
-    return "HWID-" .. tostring(tick())
+    return false
 end
 
 -- ================================
 -- VALIDATE KEY FUNCTION
 -- ================================
 local function validateKey()
-    -- Cek apakah key sudah diset
+    -- Tunggu game ready dulu
+    if not waitForGameReady() then
+        log("❌ Game tidak ready dalam waktu yang ditentukan")
+        return false
+    end
+    
+    -- Cek key
     if not _G.script_key or _G.script_key == "" then
-        local player = Players.LocalPlayer
-        if player then
-            player:Kick("[Fyy Loader] ❌ Key tidak ditemukan.\nIsi _G.script_key terlebih dahulu!")
-        end
+        log("❌ Key tidak ditemukan")
         return false
     end
 
-    -- Get user info
     local player = Players.LocalPlayer
+    if not player then return false end
+    
     local hwid = getHWID()
-    local robloxId = player and player.UserId or 0
-    local username = player and player.Name or "UNKNOWN"
+    local robloxId = player.UserId
+    local username = player.Name
     local placeId = game.PlaceId
     
-    print("[Fyy Loader] 🔍 Validating...")
-    print("  Key:", string.sub(_G.script_key, 1, 8) .. "...")
-    print("  HWID:", string.sub(hwid, 1, 16) .. "...")
-    print("  User:", username)
-    print("  UserID:", robloxId)
-    print("  PlaceID:", placeId)
-
-    -- Buat URL validasi dengan semua parameter
+    log("🔍 Validating key...")
+    
+    -- Buat URL validasi
     local url = string.format(
         "%s?key=%s&hwid=%s&robloxId=%s&placeId=%s&username=%s",
         VALIDATE_URL,
@@ -73,94 +118,65 @@ local function validateKey()
         HttpService:UrlEncode(username)
     )
 
-    -- Kirim request validasi
-    local success, response = pcall(function()
-        return game:HttpGet(url, true)
-    end)
+    -- Retry mechanism
+    for attempt = 1, MAX_RETRIES do
+        local success, response = pcall(function()
+            return game:HttpGet(url, true)
+        end)
 
-    -- Cek koneksi
-    if not success then
-        warn("[Fyy Loader] ❌ Koneksi ke server gagal:", response)
-        if player then
-            player:Kick("[Fyy Loader] ❌ Server offline / timeout\nSilakan coba lagi nanti.")
+        if success and response and response ~= "" then
+            -- Decode response
+            local data
+            success = pcall(function()
+                data = HttpService:JSONDecode(response)
+            end)
+            
+            if success and data then
+                if data.status == "ok" then
+                    log("✅ Validation success")
+                    return true
+                else
+                    -- Handle specific errors
+                    local errorCode = data.code or "UNKNOWN"
+                    local errorMsg = data.message or "Validation failed"
+                    
+                    if errorCode == "HWID_MISMATCH" then
+                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ Key sudah terikat ke device lain\nHubungi admin untuk reset HWID")
+                    elseif errorCode == "BLACKLISTED" then
+                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ Key diblacklist\nHubungi owner")
+                    elseif errorCode == "EXPIRED" then
+                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ Key sudah expired")
+                    else
+                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ " .. errorMsg)
+                    end
+                    return false
+                end
+            end
         end
-        return false
-    end
-
-    if not response or response == "" then
-        warn("[Fyy Loader] ❌ Response kosong dari server")
-        if player then
-            player:Kick("[Fyy Loader] ❌ Server tidak merespon")
+        
+        -- Retry delay
+        if attempt < MAX_RETRIES then
+            log("🔄 Retry validation (" .. attempt .. "/" .. MAX_RETRIES .. ")")
+            safeWait(RETRY_DELAY)
         end
-        return false
-    end
-
-    -- Decode JSON response
-    local data
-    success = pcall(function()
-        data = HttpService:JSONDecode(response)
-    end)
-
-    if not success or not data then
-        warn("[Fyy Loader] ❌ Response tidak valid:", response)
-        if player then
-            player:Kick("[Fyy Loader] ❌ Server error - Invalid response")
-        end
-        return false
-    end
-
-    -- Cek status
-    if data.status ~= "ok" then
-        local errorMessage = data.message or "Key invalid"
-        local errorCode = data.code or "UNKNOWN_ERROR"
-        
-        warn("[Fyy Loader] ❌ Validation failed:", errorCode, "-", errorMessage)
-        
-        -- Custom error messages
-        local kickMessages = {
-            INVALID_KEY = "Key tidak ditemukan di database",
-            BLACKLISTED = "Key telah diblacklist. Hubungi owner.",
-            EXPIRED = "Key sudah expired. Beli yang baru!",
-            HWID_MISMATCH = "Key sudah terikat ke device lain.\nReset HWID via panel.",
-            MISSING_PARAMS = "Parameter tidak lengkap",
-            BIND_FAILED = "Gagal bind HWID. Coba lagi."
-        }
-        
-        local kickMsg = kickMessages[errorCode] or errorMessage
-        
-        if player then
-            player:Kick("[Fyy Loader] ❌ " .. kickMsg .. "\n\nError Code: " .. errorCode)
-        end
-        return false
-    end
-
-    -- SUCCESS!
-    print("[Fyy Loader] ✅ Validation SUCCESS!")
-    print("  Code:", data.code)
-    print("  Message:", data.message)
-    
-    if data.userInfo then
-        print("  Username:", data.userInfo.robloxUsername or "N/A")
-        print("  Game:", data.userInfo.gameName or "N/A")
     end
     
-    return true
+    -- Max retries reached
+    Players.LocalPlayer:Kick("[Fyy Premium] ❌ Gagal terhubung ke server\nSilakan coba lagi nanti")
+    return false
 end
 
 -- ================================
 -- DOWNLOAD SCRIPT FUNCTION
 -- ================================
 local function downloadScript()
-    if not _G.script_key then
-        error("[Fyy Loader] No key found for script download")
-    end
-    
     local player = Players.LocalPlayer
-    local hwid = getHWID()
-    local username = player and player.Name or "UNKNOWN"
-    local robloxId = player and player.UserId or 0
+    if not player then return nil end
     
-    -- Buat URL untuk download script dengan endpoint secret
+    local hwid = getHWID()
+    local username = player.Name
+    local robloxId = player.UserId
+    
     local url = string.format(
         "%s?key=%s&hwid=%s&robloxId=%s&username=%s",
         SCRIPT_URL,
@@ -170,110 +186,108 @@ local function downloadScript()
         HttpService:UrlEncode(username)
     )
     
-    print("[Fyy Loader] 📥 Downloading script...")
-    print("  URL:", BASE_URL .. SECRET_ENDPOINT)
-    print("  Key:", string.sub(_G.script_key, 1, 8) .. "...")
+    log("📥 Downloading script...")
     
-    -- Download script dari server
-    local success, scriptContent = pcall(function()
-        return game:HttpGet(url, true)
+    for attempt = 1, MAX_RETRIES do
+        local success, scriptContent = pcall(function()
+            return game:HttpGet(url, true)
+        end)
+        
+        if success and scriptContent and scriptContent ~= "" then
+            -- Cek jika response error
+            if string.find(scriptContent, "ERROR:") or 
+               string.find(scriptContent, "ACCESS DENIED") or
+               string.find(scriptContent, "KEY BLACKLISTED") then
+                
+                if string.find(scriptContent, "HWID MISMATCH") then
+                    player:Kick("[Fyy Premium] ❌ Device mismatch\nReset HWID di panel")
+                elseif string.find(scriptContent, "EXPIRED") then
+                    player:Kick("[Fyy Premium] ❌ Key expired")
+                else
+                    player:Kick("[Fyy Premium] ❌ Akses script ditolak")
+                end
+                return nil
+            end
+            
+            log("✅ Script downloaded")
+            return scriptContent
+        end
+        
+        if attempt < MAX_RETRIES then
+            log("🔄 Retry download (" .. attempt .. "/" .. MAX_RETRIES .. ")")
+            safeWait(RETRY_DELAY)
+        end
+    end
+    
+    player:Kick("[Fyy Premium] ❌ Gagal download script\nCoba lagi atau hubungi admin")
+    return nil
+end
+
+-- ================================
+-- SAFE EXECUTE SCRIPT
+-- ================================
+local function safeExecute(scriptContent)
+    if not scriptContent then return end
+    
+    -- Validasi script sebelum execute
+    if #scriptContent < 100 then -- Script terlalu pendek
+        log("⚠️ Script content terlalu pendek")
+        return
+    end
+    
+    -- Coba execute dengan error handling
+    local success, err = pcall(function()
+        local fn = loadstring(scriptContent)
+        if fn then
+            fn()
+        end
     end)
     
     if not success then
-        warn("[Fyy Loader] ❌ Gagal download script:", scriptContent)
-        if player then
-            player:Kick("[Fyy Loader] ❌ Gagal download script premium\nCoba lagi atau hubungi admin.")
-        end
-        return nil
+        log("❌ Script execution error")
+        -- Tidak kick player, biar tetap bisa main
+    else
+        log("🎉 Premium features loaded")
     end
-    
-    if not scriptContent or scriptContent == "" then
-        warn("[Fyy Loader] ❌ Script content kosong")
-        if player then
-            player:Kick("[Fyy Loader] ❌ Script tidak ditemukan di server")
-        end
-        return nil
-    end
-    
-    -- Cek jika response adalah error message
-    if string.find(scriptContent, "ERROR:") or string.find(scriptContent, "ACCESS DENIED") then
-        warn("[Fyy Loader] ❌ Server menolak akses script")
-        if player then
-            player:Kick("[Fyy Loader] ❌ Akses script ditolak\n" .. scriptContent)
-        end
-        return nil
-    end
-    
-    print("[Fyy Loader] ✅ Script downloaded successfully!")
-    print("  Size:", #scriptContent, "bytes")
-    
-    return scriptContent
 end
 
 -- ================================
 -- MAIN EXECUTION
 -- ================================
-
-print([[
-=======================================
-🎮 FYY PREMIUM LOADER v2.0
-=======================================
-]])
-
--- 1. Validasi key terlebih dahulu
-print("[Fyy Loader] 🔐 Starting validation...")
-local isValid = validateKey()
-
-if not isValid then
-    print("[Fyy Loader] ❌ Validation failed. Stopping...")
-    return
-end
-
-print("[Fyy Loader] ✅ Validation passed!")
-
--- 2. Download script dari server
-print("[Fyy Loader] 🚀 Downloading premium script...")
-local scriptContent = downloadScript()
-
-if not scriptContent then
-    print("[Fyy Loader] ❌ Failed to download script")
-    return
-end
-
--- 3. Execute script utama
-print("[Fyy Loader] ⚡ Executing premium script...")
-local success, errorMsg = pcall(function()
-    loadstring(scriptContent)()
-end)
-
-if not success then
-    warn("[Fyy Loader] ❌ Error executing script:", errorMsg)
+local function main()
+    -- Tunggu game benar-benar ready
+    safeWait(1)
     
-    -- Tampilkan error yang lebih detail
-    local player = Players.LocalPlayer
-    if player then
-        player:Kick("[Fyy Loader] ❌ Script execution error:\n" .. tostring(errorMsg))
+    -- Validasi key
+    if not validateKey() then
+        return
     end
-else
-    print("[Fyy Loader] ✅ Premium script executed successfully!")
-    print("=======================================")
-    print("🎉 Enjoy the premium features!")
-    print("=======================================")
+    
+    -- Download script
+    local scriptContent = downloadScript()
+    if not scriptContent then
+        return
+    end
+    
+    -- Execute script
+    safeExecute(scriptContent)
+    
+    -- Background re-validation (optional)
+    spawn(function()
+        while true do
+            safeWait(300) -- 5 menit
+            if not validateKey() then
+                break
+            end
+        end
+    end)
 end
 
 -- ================================
--- AUTOMATIC RE-VALIDATION (OPTIONAL)
+-- INITIALIZE
 -- ================================
---[[
+-- Delay startup untuk pastikan game loaded
 spawn(function()
-    while wait(60) do -- Re-validate setiap 60 detik
-        if not validateKey() then
-            local player = Players.LocalPlayer
-            if player then
-                player:Kick("[Fyy Loader] ❌ Session expired")
-            end
-            break
-        end
-    end
+    safeWait(2) -- Tunggu 2 detik sebelum mulai
+    main()
 end)
-]]
