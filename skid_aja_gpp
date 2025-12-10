@@ -1,126 +1,79 @@
 local HttpService = game:GetService("HttpService")
 
--- BASE URL SAMA UNTUK SEMUA
-local BASE_URL = "http://151.240.0.25:3000"
-local VALIDATE_URL = BASE_URL .. "/validate"
-local SCRIPT_URL = BASE_URL .. "/script"  -- SAMA SERVER!
+-- Konfigurasi
+local CONFIG = {
+    BASE_URL = "http://151.240.0.25:3000",
+    MIN_KEY_LENGTH = 9
+}
 
-local function validateKey()
-    if not _G.script_key then
-        error("[Fyy Loader] _G.script_key belum di-set")
-    end
-
-    local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
-    local player = game.Players.LocalPlayer
-    local robloxId = player and player.UserId or 0
-    local placeId = game.PlaceId
-
-    -- Buat URL validasi
-    local url = string.format(
-        "%s?key=%s&hwid=%s&robloxId=%s&placeId=%s",
-        VALIDATE_URL,
-        HttpService:UrlEncode(_G.script_key),
-        HttpService:UrlEncode(hwid),
-        tostring(robloxId),
-        tostring(placeId)
-    )
-
-    -- Kirim request ke server validasi
-    local ok, response = pcall(function()
-        return game:HttpGet(url, true)  -- Async lebih aman
-    end)
-
-    -- Cek koneksi gagal
-    if not ok or not response or response == "" then
-        if player then
-            player:Kick("[Fyy Loader] ❌ Server offline / timeout.")
-        end
-        return false
-    end
-
-    -- Decode JSON response
-    local data
-    ok, _ = pcall(function()
-        data = HttpService:JSONDecode(response)
-    end)
-
-    if not ok or not data then
-        warn("[Fyy Loader] Response tidak valid:", response)
-        if player then
-            player:Kick("[Fyy Loader] ❌ Server response error.")
-        end
-        return false
-    end
-
-    -- Cek status response
-    if data.status ~= "ok" then
-        if player then
-            player:Kick("[Fyy Loader] ❌ " .. (data.message or "Key invalid"))
-        end
-        return false
-    end
-
-    print("[Fyy Loader] ✅ Validation OK:", data.code, data.message)
-    return true
-end
-
--- ================================
--- MAIN EXECUTION
--- ================================
-
--- 1. Validasi key dulu
-local isValid = validateKey()
-if not isValid then
-    return  -- Stop kalo key invalid
-end
-
-print("[Fyy Loader] 🚀 Script premium mulai jalan untuk key:", _G.script_key)
-
--- 2. Download dan execute script dari SERVER DENGAN KEY
-local success, scriptContent = pcall(function()
-    -- ⚠️ PERUBAHAN DISINI: TAMBAH PARAMETER key= DI URL
-    local downloadUrl = SCRIPT_URL .. "?key=" .. HttpService:UrlEncode(_G.script_key)
-    
-    -- Optional: Tambah HWID juga untuk extra security
-    local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
-    downloadUrl = downloadUrl .. "&hwid=" .. HttpService:UrlEncode(hwid)
-    
-    return game:HttpGet(downloadUrl, true)
-end)
-
-if not success or not scriptContent then
+-- Helper functions
+local function kickPlayer(message)
     local player = game.Players.LocalPlayer
     if player then
-        -- Cek error message untuk debugging
-        local errorMsg = scriptContent or "Unknown error"
-        
-        if errorMsg:find("403") or errorMsg:find("Forbidden") then
-            player:Kick("[Fyy Loader] ❌ Akses ditolak. Key tidak valid atau expired.")
-        elseif errorMsg:find("404") then
-            player:Kick("[Fyy Loader] ❌ Script tidak ditemukan di server.")
-        else
-            player:Kick("[Fyy Loader] ❌ Gagal download script: " .. errorMsg:sub(1, 100))
+        player:Kick("Fyy: " .. message)
+    end
+    return false
+end
+
+local function getKey()
+    -- Priority 1: _G.script_key
+    if _G.script_key and type(_G.script_key) == "string" then
+        if #_G.script_key < CONFIG.MIN_KEY_LENGTH then
+            return nil, "Key too short (min " .. CONFIG.MIN_KEY_LENGTH .. " chars)"
         end
+        return _G.script_key
     end
-    return
-end
-
--- 3. Execute script utama
-print("[Fyy Loader] ✅ Script berhasil didownload, executing...")
-
-local success, errorMsg = pcall(function()
-    loadstring(scriptContent)()
-end)
-
-if not success then
-    warn("[Fyy Loader] ❌ Error execute script:", errorMsg)
     
-    -- Optional: Report error ke server untuk debugging
-    local player = game.Players.LocalPlayer
-    if player then
-        player:Kick("[Fyy Loader] ❌ Error load script. Silakan coba lagi.")
+    -- Priority 2: _G.key (alternatif)
+    if _G.key and type(_G.key) == "string" and #_G.key >= CONFIG.MIN_KEY_LENGTH then
+        _G.script_key = _G.key
+        return _G.key
     end
-else
-    print("[Fyy Loader] ✅ Script berhasil dijalankan!")
+    
+    return nil, "Please set _G.script_key = 'YOUR_KEY'"
 end
 
+-- Main execution
+local function main()
+    -- Get and validate key
+    local key, keyError = getKey()
+    if not key then
+        return kickPlayer(keyError or "Invalid key")
+    end
+    
+    -- Get HWID
+    local hwid = game:GetService("RbxAnalyticsService"):GetClientId()
+    
+    -- Step 1: Validate key with server
+    local validateUrl = CONFIG.BASE_URL .. "/validate?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(hwid)
+    local success, response = pcall(game.HttpGet, game, validateUrl, true)
+    
+    if not success or not response then
+        return kickPlayer("Cannot connect to server")
+    end
+    
+    local data = pcall(HttpService.JSONDecode, HttpService, response)
+    if not data or data.status ~= "ok" then
+        return kickPlayer(data and data.message or "Invalid key")
+    end
+    
+    -- Step 2: Download script
+    local scriptUrl = CONFIG.BASE_URL .. "/script?key=" .. HttpService:UrlEncode(key) .. "&hwid=" .. HttpService:UrlEncode(hwid)
+    success, response = pcall(game.HttpGet, game, scriptUrl, true)
+    
+    if not success or not response then
+        return kickPlayer("Failed to download script")
+    end
+    
+    -- Step 3: Execute
+    local execSuccess, errorMsg = pcall(loadstring, response)
+    if not execSuccess then
+        return kickPlayer("Script error: " .. tostring(errorMsg):sub(1, 80))
+    end
+end
+
+-- Safe start dengan error handling
+local ok, err = pcall(main)
+if not ok then
+    kickPlayer("Loader error: " .. tostring(err):sub(1, 80))
+end
