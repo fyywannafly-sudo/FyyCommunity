@@ -1,5 +1,5 @@
 -- ================================
--- Fyy PREMIUM LOADER v2.0 (UPDATED)
+-- Fyy PREMIUM LOADER v2.0 (FIXED SESSION ERROR)
 -- ================================
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -14,7 +14,7 @@ local VALIDATE_URL = BASE_URL .. "/validate"
 local SCRIPT_URL = BASE_URL .. SECRET_ENDPOINT
 
 -- SETTINGS
-local ENABLE_LOGS = true -- Set false untuk hide semua print
+local ENABLE_LOGS = true
 local MAX_RETRIES = 3
 local RETRY_DELAY = 2
 
@@ -44,7 +44,6 @@ local function getHWID()
         return hwid
     end
     
-    -- Fallback method
     pcall(function()
         hwid = game:GetService("HttpService"):GenerateGUID(false)
     end)
@@ -52,60 +51,43 @@ local function getHWID()
     return hwid or "HWID-" .. tostring(tick())
 end
 
--- ================================
--- WAIT FOR GAME READY
--- ================================
-local function waitForGameReady()
-    local attempts = 0
-    local maxAttempts = 30 -- 30 detik maksimal
-    
-    while attempts < maxAttempts do
-        local player = Players.LocalPlayer
-        local character = player and player.Character
-        local humanoid = character and character:FindFirstChild("Humanoid")
+local function secureHttpGet(url)
+    for attempt = 1, MAX_RETRIES do
+        local success, response = pcall(function()
+            return game:HttpGet(url, true)
+        end)
         
-        -- Cek apakah game sudah siap
-        if player and player.UserId > 0 and game.PlaceId > 0 then
-            -- Optional: tunggu character load juga
-            if character and humanoid then
-                log("✅ Game ready - Player loaded")
-                return true
-            elseif attempts > 10 then -- Tunggu 10 attempt untuk character
-                log("⚠️ Game ready, character still loading")
-                return true
-            end
+        if success and response and response ~= "" then
+            return response
         end
         
-        attempts += 1
-        log("⏳ Waiting for game... (" .. attempts .. "/" .. maxAttempts .. ")")
-        safeWait(1)
+        if attempt < MAX_RETRIES then
+            log("🔄 Retry HTTP (" .. attempt .. "/" .. MAX_RETRIES .. ")")
+            safeWait(RETRY_DELAY)
+        end
     end
-    
-    return false
+    return nil
 end
 
 -- ================================
--- VALIDATE KEY FUNCTION (UPDATE: Simpan key ke _G)
+-- VALIDATE KEY FUNCTION
 -- ================================
 local function validateKey()
-    -- Tunggu game ready dulu
-    if not waitForGameReady() then
-        log("❌ Game tidak ready dalam waktu yang ditentukan")
-        return false
+    local player = Players.LocalPlayer
+    if not player then 
+        log("❌ Player not found")
+        return false 
     end
     
-    -- Cek key dari variabel global atau input
-    local USER_KEY = _G.script_key or "YOUR_KEY_HERE" -- Ganti dengan key user
+    -- Cek key dari variabel global
+    local USER_KEY = _G.script_key or "YOUR_KEY_HERE"
     
     if not USER_KEY or USER_KEY == "" or USER_KEY == "YOUR_KEY_HERE" then
         log("❌ Key tidak ditemukan")
-        log("ℹ️ Set key dengan: _G.script_key = 'YOUR_KEY' sebelum execute loader")
+        log("ℹ️ Set: _G.script_key = 'YOUR_KEY' sebelum execute loader")
         return false
     end
 
-    local player = Players.LocalPlayer
-    if not player then return false end
-    
     local hwid = getHWID()
     local robloxId = player.UserId
     local username = player.Name
@@ -124,65 +106,257 @@ local function validateKey()
         HttpService:UrlEncode(username)
     )
 
-    -- Retry mechanism
-    for attempt = 1, MAX_RETRIES do
-        local success, response = pcall(function()
-            return game:HttpGet(url, true)
-        end)
-
-        if success and response and response ~= "" then
-            -- Decode response
-            local data
-            success = pcall(function()
-                data = HttpService:JSONDecode(response)
-            end)
-            
-            if success and data then
-                if data.status == "ok" then
-                    -- ✅ SIMPAN KEY KE GLOBAL VARIABLE UNTUK SCRIPT UTAMA
-                    _G.script_key = USER_KEY
-                    _G.fyy_hwid = hwid
-                    _G.fyy_userid = robloxId
-                    
-                    log("✅ Validation success")
-                    log("📦 Key stored in _G.script_key")
-                    return true, USER_KEY, hwid, robloxId, username
-                else
-                    -- Handle specific errors
-                    local errorCode = data.code or "UNKNOWN"
-                    local errorMsg = data.message or "Validation failed"
-                    
-                    if errorCode == "HWID_MISMATCH" then
-                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ Key sudah terikat ke device lain\nHubungi admin untuk reset HWID")
-                    elseif errorCode == "BLACKLISTED" then
-                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ Key diblacklist\nHubungi owner")
-                    elseif errorCode == "EXPIRED" then
-                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ Key sudah expired")
-                    else
-                        Players.LocalPlayer:Kick("[Fyy Premium] ❌ " .. errorMsg)
-                    end
-                    return false
-                end
-            end
-        end
-        
-        -- Retry delay
-        if attempt < MAX_RETRIES then
-            log("🔄 Retry validation (" .. attempt .. "/" .. MAX_RETRIES .. ")")
-            safeWait(RETRY_DELAY)
-        end
+    local response = secureHttpGet(url)
+    if not response then
+        player:Kick("[Fyy Premium] ❌ Gagal terhubung ke server")
+        return false
     end
+
+    local data
+    local success = pcall(function()
+        data = HttpService:JSONDecode(response)
+    end)
     
-    -- Max retries reached
-    Players.LocalPlayer:Kick("[Fyy Premium] ❌ Gagal terhubung ke server\nSilakan coba lagi nanti")
-    return false
+    if not success or not data then
+        player:Kick("[Fyy Premium] ❌ Server response error")
+        return false
+    end
+
+    if data.status == "ok" then
+        -- ✅ SIMPAN DATA UNTUK SCRIPT UTAMA
+        _G.script_key = USER_KEY
+        _G.fyy_hwid = hwid
+        _G.fyy_userid = robloxId
+        _G.fyy_username = username
+        
+        log("✅ Validation success")
+        log("📦 User data stored in _G")
+        return true, USER_KEY, hwid, robloxId, username
+    else
+        local errorCode = data.code or "UNKNOWN"
+        local errorMsg = data.message or "Validation failed"
+        
+        if errorCode == "HWID_MISMATCH" then
+            player:Kick("[Fyy Premium] ❌ Device mismatch\nHubungi admin untuk reset HWID")
+        elseif errorCode == "BLACKLISTED" then
+            player:Kick("[Fyy Premium] ❌ Key diblacklist\nHubungi owner")
+        elseif errorCode == "EXPIRED" then
+            player:Kick("[Fyy Premium] ❌ Key sudah expired")
+        else
+            player:Kick("[Fyy Premium] ❌ " .. errorMsg)
+        end
+        return false
+    end
 end
 
 -- ================================
--- DOWNLOAD SCRIPT FUNCTION
+-- EXTRACT DATA FROM ENCRYPTED LOADER
 -- ================================
-local function downloadScript(userKey, hwid, robloxId, username)
-    if not userKey then return nil end
+local function extractLoaderData(loaderCode)
+    local data = {}
+    
+    -- Extract session ID
+    data.sessionId = loaderCode:match("Session:%s*(%S+)")
+    
+    -- Extract encrypted payload
+    data.encryptedPayload = loaderCode:match('local ENCRYPTED_PAYLOAD = "([^"]+)"')
+    data.ivHex = loaderCode:match('local IV_HEX = "([^"]+)"')
+    data.tagHex = loaderCode:match('local TAG_HEX = "([^"]+)"')
+    data.keyHint = loaderCode:match('local KEY_HINT = "([^"]+)"')
+    
+    -- Check if all required data exists
+    data.isValid = data.sessionId and 
+                   data.encryptedPayload and 
+                   data.ivHex and 
+                   data.tagHex
+    
+    return data
+end
+
+-- ================================
+-- GET SESSION KEY FROM SERVER (FIXED!)
+-- ================================
+local function getSessionKey(sessionId, userId, hwid)
+    if not sessionId or not userId or not hwid then
+        log("❌ Missing parameters for session")
+        return nil
+    end
+    
+    -- ✅ FIX: TAMBAHKAN userId DAN hwid SEBAGAI QUERY PARAMETERS
+    local sessionUrl = string.format(
+        "%s/session/%s?userId=%s&hwid=%s",
+        BASE_URL,
+        sessionId,
+        tostring(userId),
+        HttpService:UrlEncode(hwid)
+    )
+    
+    log("🔑 Requesting session key...")
+    log("URL:", string.sub(sessionUrl, 1, 100) .. "...")
+    
+    local response = secureHttpGet(sessionUrl)
+    if not response then
+        log("❌ No response from session endpoint")
+        return nil
+    end
+    
+    -- Parse JSON response
+    local sessionData
+    local success, err = pcall(function()
+        sessionData = HttpService:JSONDecode(response)
+    end)
+    
+    if not success then
+        log("❌ Failed to parse session response:", err)
+        log("Raw response:", string.sub(response, 1, 200))
+        return nil
+    end
+    
+    if sessionData.error then
+        log("❌ Session error:", sessionData.error)
+        if sessionData.hint then
+            log("💡 Hint:", sessionData.hint)
+        end
+        return nil
+    end
+    
+    if not sessionData.key then
+        log("❌ No key in session response")
+        return nil
+    end
+    
+    log("✅ Session key received")
+    if sessionData.expiresIn then
+        log("⏳ Expires in:", math.floor(sessionData.expiresIn / 1000), "seconds")
+    end
+    
+    return sessionData.key
+end
+
+-- ================================
+-- SIMPLE DECRYPTION (PLACEHOLDER)
+-- ================================
+local function simpleDecrypt(encryptedHex, keyHex, ivHex, tagHex)
+    -- Placeholder function - in real implementation you need AES library
+    log("⚠️ Using simple XOR decryption (placeholder)")
+    
+    -- Convert hex to bytes
+    local function hexToBytes(hex)
+        local bytes = {}
+        for i = 1, #hex, 2 do
+            local byteStr = hex:sub(i, i+1)
+            local byte = tonumber(byteStr, 16)
+            if byte then
+                table.insert(bytes, byte)
+            end
+        end
+        if #bytes == 0 then return "" end
+        return string.char(table.unpack(bytes))
+    end
+    
+    local encrypted = hexToBytes(encryptedHex)
+    local key = hexToBytes(keyHex)
+    
+    if #encrypted == 0 or #key == 0 then
+        log("❌ Invalid hex data")
+        return nil
+    end
+    
+    -- Simple XOR "decryption" (for testing only)
+    local decrypted = ""
+    for i = 1, #encrypted do
+        local charCode = string.byte(encrypted, i)
+        local keyChar = string.byte(key, (i % #key) + 1)
+        if charCode and keyChar then
+            decrypted = decrypted .. string.char(bit32.bxor(charCode, keyChar))
+        end
+    end
+    
+    return decrypted
+end
+
+-- ================================
+-- EXECUTE ENCRYPTED LOADER (FIXED!)
+-- ================================
+local function executeEncryptedLoader(loaderCode, userId, hwid)
+    -- Extract data dari loader
+    local loaderData = extractLoaderData(loaderCode)
+    
+    if not loaderData.isValid then
+        log("❌ Invalid loader format")
+        log("Has sessionId:", loaderData.sessionId ~= nil)
+        log("Has payload:", loaderData.encryptedPayload ~= nil)
+        return false
+    end
+    
+    log("🔐 Session ID:", string.sub(loaderData.sessionId, 1, 16) .. "...")
+    log("📦 Payload size:", #(loaderData.encryptedPayload or ""))
+    
+    -- Get session key dari server
+    local sessionKey = getSessionKey(loaderData.sessionId, userId, hwid)
+    if not sessionKey then
+        log("❌ Failed to get session key")
+        return false
+    end
+    
+    -- Decrypt script
+    log("🔓 Decrypting script...")
+    local decrypted = simpleDecrypt(
+        loaderData.encryptedPayload,
+        sessionKey,
+        loaderData.ivHex,
+        loaderData.tagHex
+    )
+    
+    if not decrypted or #decrypted < 100 then
+        log("⚠️ Decryption failed or result too short")
+        log("📄 Decrypted preview:", string.sub(decrypted or "", 1, 200))
+        
+        -- Fallback: try to execute loader directly
+        log("🔄 Trying fallback execution...")
+        local fn, err = loadstring(loaderCode)
+        if fn then
+            local success, err2 = pcall(fn)
+            if success then
+                log("✅ Loader executed (fallback mode)")
+                return true
+            else
+                log("❌ Fallback execution failed:", err2)
+            end
+        else
+            log("❌ Failed to load loader:", err)
+        end
+        return false
+    end
+    
+    -- Execute decrypted script
+    log("✅ Decryption successful (" .. #decrypted .. " bytes)")
+    log("🚀 Executing decrypted script...")
+    
+    local fn, err = loadstring(decrypted)
+    if fn then
+        local success, err2 = pcall(fn)
+        if success then
+            log("🎉 Script executed successfully")
+            return true
+        else
+            log("❌ Script execution error:", err2)
+            return false
+        end
+    else
+        log("❌ Failed to load decrypted script:", err)
+        return false
+    end
+end
+
+-- ================================
+-- DOWNLOAD ENCRYPTED SCRIPT
+-- ================================
+local function downloadEncryptedScript(userKey, hwid, robloxId, username)
+    if not userKey then 
+        log("❌ No user key provided")
+        return nil 
+    end
     
     local url = string.format(
         "%s?key=%s&hwid=%s&robloxId=%s&username=%s",
@@ -193,112 +367,99 @@ local function downloadScript(userKey, hwid, robloxId, username)
         HttpService:UrlEncode(username)
     )
     
-    log("📥 Downloading script...")
+    log("📥 Downloading encrypted script...")
+    log("URL:", string.sub(url, 1, 80) .. "...")
     
-    for attempt = 1, MAX_RETRIES do
-        local success, scriptContent = pcall(function()
-            return game:HttpGet(url, true)
-        end)
-        
-        if success and scriptContent and scriptContent ~= "" then
-            -- Cek jika response error
-            if string.find(scriptContent, "ERROR:") or 
-               string.find(scriptContent, "ACCESS DENIED") or
-               string.find(scriptContent, "KEY BLACKLISTED") then
-                
-                if string.find(scriptContent, "HWID MISMATCH") then
-                    Players.LocalPlayer:Kick("[Fyy Premium] ❌ Device mismatch\nReset HWID di panel")
-                elseif string.find(scriptContent, "EXPIRED") then
-                    Players.LocalPlayer:Kick("[Fyy Premium] ❌ Key expired")
-                else
-                    Players.LocalPlayer:Kick("[Fyy Premium] ❌ Akses script ditolak")
-                end
-                return nil
-            end
-            
-            log("✅ Script downloaded (" .. #scriptContent .. " bytes)")
-            return scriptContent
-        end
-        
-        if attempt < MAX_RETRIES then
-            log("🔄 Retry download (" .. attempt .. "/" .. MAX_RETRIES .. ")")
-            safeWait(RETRY_DELAY)
-        end
+    local response = secureHttpGet(url)
+    if not response then
+        log("❌ Failed to download script")
+        return nil
     end
     
-    Players.LocalPlayer:Kick("[Fyy Premium] ❌ Gagal download script\nCoba lagi atau hubungi admin")
-    return nil
+    -- Check for error messages
+    if string.find(response, "ERROR:") or 
+       string.find(response, "ACCESS DENIED") or
+       string.find(response, "KEY BLACKLISTED") then
+        
+        log("❌ Server returned error")
+        
+        -- Try to extract error message
+        local errorLine = response:match("ERROR:%s*(.-)\n") or 
+                         response:match("--%s*ERROR:%s*(.-)\n") or
+                         "Unknown error"
+        
+        game:GetService("Players").LocalPlayer:Kick("[Fyy Premium] ❌ " .. errorLine)
+        return nil
+    end
+    
+    log("✅ Encrypted loader received (" .. #response .. " bytes)")
+    return response
 end
 
 -- ================================
--- SAFE EXECUTE SCRIPT
--- ================================
-local function safeExecute(scriptContent)
-    if not scriptContent then return end
-    
-    -- Validasi script sebelum execute
-    if #scriptContent < 100 then -- Script terlalu pendek
-        log("⚠️ Script content terlalu pendek")
-        return
-    end
-    
-    -- Cek jika sudah ada _G.script_key (seharusnya sudah diset di validateKey)
-    if not _G.script_key then
-        log("⚠️ _G.script_key not found, re-initializing...")
-        -- Optional: bisa minta input key di sini
-    end
-    
-    -- Coba execute dengan error handling
-    local success, err = pcall(function()
-        local fn = loadstring(scriptContent)
-        if fn then
-            fn()
-        end
-    end)
-    
-    if not success then
-        log("❌ Script execution error:", err)
-        -- Tidak kick player, biar tetap bisa main
-    else
-        log("🎉 Premium features loaded")
-    end
-end
-
--- ================================
--- MAIN EXECUTION (UPDATE: Tangkap return value dari validateKey)
+-- MAIN EXECUTION
 -- ================================
 local function main()
-    -- Tunggu game benar-benar ready
-    safeWait(1)
+    -- Tunggu game ready
+    safeWait(2)
     
-    -- Validasi key dan simpan return values
+    -- Validasi key
     local valid, userKey, hwid, robloxId, username = validateKey()
     if not valid then
+        log("❌ Key validation failed")
         return
     end
     
-    -- Pastikan _G.script_key sudah diset
-    if not _G.script_key then
-        log("❌ _G.script_key not set after validation")
+    log("👤 User:", username, "(ID:", robloxId, ")")
+    log("🔑 Key:", string.sub(userKey, 1, 8) .. "...")
+    log("🖥️ HWID:", string.sub(hwid, 1, 8) .. "...")
+    
+    -- Download encrypted script
+    local loaderCode = downloadEncryptedScript(userKey, hwid, robloxId, username)
+    if not loaderCode then
+        log("❌ Failed to download script")
         return
     end
     
-    log("🔑 Using key: " .. string.sub(_G.script_key, 1, 8) .. "...")
+    -- Check if this is an encrypted loader or regular script
+    local loaderData = extractLoaderData(loaderCode)
     
-    -- Download script dengan parameter yang diperlukan
-    local scriptContent = downloadScript(userKey, hwid, robloxId, username)
-    if not scriptContent then
-        return
+    if loaderData.isValid then
+        -- This is an encrypted loader, need to decrypt
+        log("🔐 Detected encrypted loader, processing...")
+        local success = executeEncryptedLoader(loaderCode, tostring(robloxId), hwid)
+        
+        if success then
+            log("🎉 Premium features loaded (encrypted)")
+        else
+            log("⚠️ Encrypted loader execution failed")
+            
+            -- Last resort: try to execute as regular script
+            log("🔄 Trying as regular script...")
+            local fn, err = loadstring(loaderCode)
+            if fn then
+                pcall(fn)
+                log("✅ Executed as regular script")
+            end
+        end
+    else
+        -- This is a regular script, execute directly
+        log("📜 Detected regular script, executing...")
+        local fn, err = loadstring(loaderCode)
+        if fn then
+            pcall(fn)
+            log("✅ Regular script executed")
+        else
+            log("❌ Failed to load script:", err)
+        end
     end
     
-    -- Execute script
-    safeExecute(scriptContent)
-    
-    -- Background re-validation (optional)
+    -- Background re-validation
     spawn(function()
         while true do
-            safeWait(300) -- 5 menit
+            safeWait(300)
             if not validateKey() then
+                log("⚠️ Re-validation failed")
                 break
             end
         end
@@ -306,38 +467,26 @@ local function main()
 end
 
 -- ================================
--- INITIALIZE - DUA CARA PENGGUNAAN
+-- INITIALIZE
 -- ================================
-
--- CARA 1: AUTO-RUN (default)
 spawn(function()
-    safeWait(2) -- Tunggu 2 detik sebelum mulai
+    safeWait(3) -- Tunggu 3 detik sebelum mulai
+    
+    -- Check if key is set
+    if not _G.script_key or _G.script_key == "" then
+        log("ℹ️ No key provided - script won't run")
+        log("💡 Set key with: _G.script_key = 'YOUR_KEY'")
+        return
+    end
+    
+    log("🚀 Starting Fyy Premium Loader...")
     main()
 end)
 
--- CARA 2: MANUAL EXECUTE (jika perlu input key manual)
---[[
--- Uncomment block ini jika mau input key manual
-local function manualStart()
-    -- Minta input key dari user
-    _G.script_key = "INPUT_KEY_DISINI" -- Ganti dengan input user
-    
-    -- Jalankan main
-    main()
-end
-
--- Panggil manualStart() ketika trigger tertentu
--- contoh: game:GetService("UserInputService").InputBegan:Connect(function(input)
---     if input.KeyCode == Enum.KeyCode.F5 then
---         manualStart()
---     end
--- end)
-]]
-
--- Export functions jika diperlukan
+-- Export untuk debugging
 return {
     validateKey = validateKey,
     getHWID = getHWID,
-    version = "2.1",
-    description = "Fyy Premium Loader with _G.script_key support"
+    version = "2.2-fixed",
+    description = "Fixed session parameter error"
 }
