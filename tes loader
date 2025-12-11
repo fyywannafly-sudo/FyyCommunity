@@ -8,7 +8,7 @@ local RunService = game:GetService("RunService")
 -- ================================
 -- CONFIGURATION
 -- ================================
-local BASE_URL = "http://localhost:3000"
+local BASE_URL = "151.240.0.25:3002"
 local SECRET_ENDPOINT = "/AOJWDOJWAJDASODWAHI021031"
 local VALIDATE_URL = BASE_URL .. "/validate"
 local SCRIPT_URL = BASE_URL .. SECRET_ENDPOINT
