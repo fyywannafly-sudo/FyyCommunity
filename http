@@ -1,0 +1,821 @@
+-- HTTP Monitor v3.0 - STABLE VERSION
+-- Fix semua bug, UI clean, dan request tetap lancar
+
+local function formatRawHttp(method, url, headers, body)
+    local host, path = "unknown", "/"
+    
+    if url:find("://") then
+        local afterProtocol = url:split("://")[2]
+        if afterProtocol then
+            local parts = afterProtocol:split("/")
+            host = parts[1]
+            if #parts > 1 then
+                path = "/" .. table.concat({table.unpack(parts, 2)}, "/")
+            end
+        end
+    end
+    
+    local raw = string.format("%s %s HTTP/1.1\r\nHost: %s\r\n", method:upper(), path, host)
+    
+    if headers then
+        for k, v in pairs(headers) do
+            raw = raw .. k .. ": " .. tostring(v) .. "\r\n"
+        end
+    end
+    
+    if body then
+        raw = raw .. "Content-Length: " .. #tostring(body) .. "\r\n\r\n" .. tostring(body)
+    else
+        raw = raw .. "\r\n"
+    end
+    
+    return raw
+end
+
+local function formatResponse(response, responseHeaders, isTooLong)
+    if isTooLong then
+        return "-- Response too long (" .. #tostring(response) .. " characters) --"
+    end
+    
+    local responseStr = tostring(response)
+    if responseStr:match("^HTTP/") and not (responseHeaders and next(responseHeaders)) then
+        return responseStr
+    end
+    
+    local raw = "HTTP/1.1 200 OK\r\n"
+    if responseHeaders then
+        for k, v in pairs(responseHeaders) do
+            raw = raw .. k .. ": " .. tostring(v) .. "\r\n"
+        end
+    end
+    
+    return raw .. "\r\n" .. responseStr
+end
+
+-- SIMPLE UI CREATOR
+local function createUI()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "HttpMonitor_" .. tostring(math.random(10000, 99999))
+    gui.Parent = game:GetService("CoreGui")
+    gui.DisplayOrder = 999
+    
+    -- Main container
+    local main = Instance.new("Frame")
+    main.Name = "Main"
+    main.Size = UDim2.new(0, 500, 0, 400)
+    main.Position = UDim2.new(0.5, -250, 0.5, -200)
+    main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    main.BorderSizePixel = 0
+    main.ClipsDescendants = true
+    main.Parent = gui
+    
+    -- Header
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.Size = UDim2.new(1, 0, 0, 35)
+    header.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    header.BorderSizePixel = 0
+    header.Parent = main
+    
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(0.5, 0, 1, 0)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Text = "📡 HTTP Monitor"
+    title.Parent = header
+    
+    -- Header buttons
+    local function createHeaderBtn(name, text, posX)
+        local btn = Instance.new("TextButton")
+        btn.Name = name
+        btn.Size = UDim2.new(0, 80, 0, 25)
+        btn.Position = UDim2.new(posX, 0, 0.5, -12.5)
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 12
+        btn.Text = text
+        btn.BorderSizePixel = 0
+        btn.Parent = header
+        return btn
+    end
+    
+    local interceptBtn = createHeaderBtn("InterceptBtn", "Intercept: OFF", 0.5)
+    local clearBtn = createHeaderBtn("ClearBtn", "Clear", 0.65)
+    local closeBtn = createHeaderBtn("CloseBtn", "Close", 0.8)
+    
+    -- Request list
+    local listFrame = Instance.new("Frame")
+    listFrame.Name = "ListFrame"
+    listFrame.Size = UDim2.new(0.35, -5, 1, -40)
+    listFrame.Position = UDim2.new(0, 5, 0, 40)
+    listFrame.BackgroundTransparency = 1
+    listFrame.Parent = main
+    
+    local listScroll = Instance.new("ScrollingFrame")
+    listScroll.Name = "ListScroll"
+    listScroll.Size = UDim2.new(1, 0, 1, 0)
+    listScroll.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    listScroll.BorderSizePixel = 0
+    listScroll.ScrollBarThickness = 6
+    listScroll.Parent = listFrame
+    
+    -- Detail panel
+    local detailFrame = Instance.new("Frame")
+    detailFrame.Name = "DetailFrame"
+    detailFrame.Size = UDim2.new(0.65, -10, 1, -40)
+    detailFrame.Position = UDim2.new(0.35, 5, 0, 40)
+    detailFrame.BackgroundTransparency = 1
+    detailFrame.Parent = main
+    
+    -- Tabs
+    local tabFrame = Instance.new("Frame")
+    tabFrame.Name = "TabFrame"
+    tabFrame.Size = UDim2.new(1, 0, 0, 30)
+    tabFrame.BackgroundTransparency = 1
+    tabFrame.Parent = detailFrame
+    
+    local requestTab = Instance.new("TextButton")
+    requestTab.Name = "RequestTab"
+    requestTab.Size = UDim2.new(0.5, -2, 1, 0)
+    requestTab.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    requestTab.TextColor3 = Color3.new(1, 1, 1)
+    requestTab.Font = Enum.Font.Gotham
+    requestTab.TextSize = 12
+    requestTab.Text = "📤 Request"
+    requestTab.BorderSizePixel = 0
+    requestTab.Parent = tabFrame
+    
+    local responseTab = Instance.new("TextButton")
+    responseTab.Name = "ResponseTab"
+    responseTab.Size = UDim2.new(0.5, -2, 1, 0)
+    responseTab.Position = UDim2.new(0.5, 2, 0, 0)
+    responseTab.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    responseTab.TextColor3 = Color3.new(1, 1, 1)
+    responseTab.Font = Enum.Font.Gotham
+    responseTab.TextSize = 12
+    responseTab.Text = "📥 Response"
+    responseTab.BorderSizePixel = 0
+    responseTab.Parent = tabFrame
+    
+    -- Detail text
+    local detailScroll = Instance.new("ScrollingFrame")
+    detailScroll.Name = "DetailScroll"
+    detailScroll.Size = UDim2.new(1, 0, 1, -35)
+    detailScroll.Position = UDim2.new(0, 0, 0, 35)
+    detailScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    detailScroll.BorderSizePixel = 0
+    detailScroll.ScrollBarThickness = 6
+    detailScroll.Parent = detailFrame
+    
+    local detailText = Instance.new("TextBox")
+    detailText.Name = "DetailText"
+    detailText.Size = UDim2.new(1, -10, 1, 0)
+    detailText.Position = UDim2.new(0, 5, 0, 0)
+    detailText.BackgroundTransparency = 1
+    detailText.TextColor3 = Color3.new(1, 1, 1)
+    detailText.Font = Enum.Font.Code
+    detailText.TextSize = 11
+    detailText.MultiLine = true
+    detailText.TextXAlignment = Enum.TextXAlignment.Left
+    detailText.TextYAlignment = Enum.TextYAlignment.Top
+    detailText.Text = "Select a request to view details"
+    detailText.ClearTextOnFocus = false
+    detailText.TextWrapped = false
+    detailText.ClipsDescendants = false
+    detailText.Parent = detailScroll
+    
+    -- Action buttons (only show when intercepting)
+    local actionFrame = Instance.new("Frame")
+    actionFrame.Name = "ActionFrame"
+    actionFrame.Size = UDim2.new(1, 0, 0, 35)
+    actionFrame.Position = UDim2.new(0, 0, 1, -35)
+    actionFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    actionFrame.BorderSizePixel = 0
+    actionFrame.Visible = false
+    actionFrame.Parent = detailFrame
+    
+    local downloadBtn = Instance.new("TextButton")
+    downloadBtn.Name = "DownloadBtn"
+    downloadBtn.Size = UDim2.new(0, 100, 0, 26)
+    downloadBtn.Position = UDim2.new(0, 5, 0.5, -13)
+    downloadBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 180)
+    downloadBtn.TextColor3 = Color3.new(1, 1, 1)
+    downloadBtn.Font = Enum.Font.Gotham
+    downloadBtn.TextSize = 12
+    downloadBtn.Text = "💾 Download"
+    downloadBtn.BorderSizePixel = 0
+    downloadBtn.Parent = actionFrame
+    
+    local forwardBtn = Instance.new("TextButton")
+    forwardBtn.Name = "ForwardBtn"
+    forwardBtn.Size = UDim2.new(0, 100, 0, 26)
+    forwardBtn.Position = UDim2.new(0.5, -50, 0.5, -13)
+    forwardBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+    forwardBtn.TextColor3 = Color3.new(1, 1, 1)
+    forwardBtn.Font = Enum.Font.Gotham
+    forwardBtn.TextSize = 12
+    forwardBtn.Text = "✅ Forward"
+    forwardBtn.BorderSizePixel = 0
+    forwardBtn.Parent = actionFrame
+    
+    local dropBtn = Instance.new("TextButton")
+    dropBtn.Name = "DropBtn"
+    dropBtn.Size = UDim2.new(0, 100, 0, 26)
+    dropBtn.Position = UDim2.new(1, -105, 0.5, -13)
+    dropBtn.BackgroundColor3 = Color3.fromRGB(180, 80, 80)
+    dropBtn.TextColor3 = Color3.new(1, 1, 1)
+    dropBtn.Font = Enum.Font.Gotham
+    dropBtn.TextSize = 12
+    dropBtn.Text = "❌ Drop"
+    dropBtn.BorderSizePixel = 0
+    dropBtn.Parent = actionFrame
+    
+    return {
+        gui = gui,
+        main = main,
+        header = header,
+        interceptBtn = interceptBtn,
+        clearBtn = clearBtn,
+        closeBtn = closeBtn,
+        listScroll = listScroll,
+        requestTab = requestTab,
+        responseTab = responseTab,
+        detailScroll = detailScroll,
+        detailText = detailText,
+        actionFrame = actionFrame,
+        downloadBtn = downloadBtn,
+        forwardBtn = forwardBtn,
+        dropBtn = dropBtn
+    }
+end
+
+-- STATE MANAGEMENT
+local State = {
+    requests = {},
+    selectedIndex = nil,
+    currentTab = "request",
+    interceptEnabled = false,
+    interceptQueue = {},
+    currentIntercept = nil,
+    interceptId = 0,
+    maxRequests = 100 -- Limit jumlah request yang disimpan
+}
+
+-- INIT UI
+local UI = createUI()
+
+-- UI FUNCTIONS
+local function updateDetailScroll()
+    local lines = {}
+    for line in string.gmatch(UI.detailText.Text, "[^\n]+") do
+        table.insert(lines, line)
+    end
+    local maxWidth = 0
+    for _, line in ipairs(lines) do 
+        maxWidth = math.max(maxWidth, #line) 
+    end
+    UI.detailScroll.CanvasSize = UDim2.new(0, math.max(maxWidth * 7, 100), 0, #lines * 18)
+end
+
+local function updateListScroll()
+    UI.listScroll.CanvasSize = UDim2.new(0, 0, 0, #State.requests * 45)
+end
+
+local function updateDetailView()
+    if State.selectedIndex and State.requests[State.selectedIndex] then
+        local req = State.requests[State.selectedIndex]
+        if State.currentTab == "request" then
+            UI.detailText.Text = req.requestRaw
+        else
+            UI.detailText.Text = req.responseRaw or "No response data"
+        end
+        
+        -- Enable editing only for response tab in intercept mode
+        UI.detailText.TextEditable = (req.interceptData and State.currentTab == "response")
+        UI.actionFrame.Visible = (req.interceptData ~= nil)
+        UI.downloadBtn.Visible = (State.currentTab == "response")
+    else
+        UI.detailText.Text = "Select a request to view details"
+        UI.detailText.TextEditable = false
+        UI.actionFrame.Visible = false
+    end
+    updateDetailScroll()
+end
+
+local function switchTab(tab)
+    State.currentTab = tab
+    UI.requestTab.BackgroundColor3 = tab == "request" and Color3.fromRGB(60, 60, 60) or Color3.fromRGB(40, 40, 40)
+    UI.responseTab.BackgroundColor3 = tab == "response" and Color3.fromRGB(60, 60, 60) or Color3.fromRGB(40, 40, 40)
+    updateDetailView()
+end
+
+local function createRequestButton(idx, req)
+    local btn = Instance.new("TextButton")
+    btn.Name = "ReqBtn_" .. idx
+    btn.Size = UDim2.new(1, -10, 0, 42)
+    btn.Position = UDim2.new(0, 5, 0, (idx - 1) * 45)
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    if req.interceptData then
+        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 35) -- Yellow tint for pending intercept
+    end
+    btn.BorderSizePixel = 0
+    btn.Text = ""
+    btn.Parent = UI.listScroll
+    
+    -- Method label
+    local methodLabel = Instance.new("TextLabel")
+    methodLabel.Name = "Method"
+    methodLabel.Size = UDim2.new(0, 45, 0, 20)
+    methodLabel.Position = UDim2.new(0, 5, 0, 5)
+    methodLabel.BackgroundTransparency = 1
+    methodLabel.TextColor3 = 
+        req.method == "GET" and Color3.fromRGB(100, 200, 255) or
+        req.method == "POST" and Color3.fromRGB(255, 200, 100) or
+        req.method == "PUT" and Color3.fromRGB(255, 150, 100) or
+        req.method == "DELETE" and Color3.fromRGB(255, 100, 100) or
+        Color3.fromRGB(200, 150, 255)
+    methodLabel.Font = Enum.Font.GothamBold
+    methodLabel.TextSize = 11
+    methodLabel.Text = req.method
+    methodLabel.TextXAlignment = Enum.TextXAlignment.Left
+    methodLabel.Parent = btn
+    
+    -- URL label
+    local urlLabel = Instance.new("TextLabel")
+    urlLabel.Name = "URL"
+    urlLabel.Size = UDim2.new(1, -55, 0, 35)
+    urlLabel.Position = UDim2.new(0, 50, 0, 5)
+    urlLabel.BackgroundTransparency = 1
+    urlLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+    urlLabel.Font = Enum.Font.Code
+    urlLabel.TextSize = 10
+    urlLabel.Text = string.sub(req.url, 1, 40) .. (#req.url > 40 and "..." or "")
+    urlLabel.TextXAlignment = Enum.TextXAlignment.Left
+    urlLabel.TextYAlignment = Enum.TextYAlignment.Top
+    urlLabel.TextWrapped = true
+    urlLabel.ClipsDescendants = true
+    urlLabel.Parent = btn
+    
+    -- Status indicator
+    if req.status then
+        local statusLabel = Instance.new("TextLabel")
+        statusLabel.Name = "Status"
+        statusLabel.Size = UDim2.new(0, 60, 0, 15)
+        statusLabel.Position = UDim2.new(1, -65, 1, -18)
+        statusLabel.BackgroundTransparency = 1
+        statusLabel.TextColor3 = 
+            req.status == "MODIFIED" and Color3.fromRGB(100, 255, 100) or
+            req.status == "DROPPED" and Color3.fromRGB(255, 100, 100) or
+            req.status == "CANCELLED" and Color3.fromRGB(150, 150, 150) or
+            Color3.fromRGB(255, 255, 150)
+        statusLabel.Font = Enum.Font.Gotham
+        statusLabel.TextSize = 9
+        statusLabel.Text = req.status
+        statusLabel.TextXAlignment = Enum.TextXAlignment.Right
+        statusLabel.Parent = btn
+    end
+    
+    btn.MouseButton1Click:Connect(function()
+        -- Reset previous selection
+        if State.selectedIndex then
+            local prevBtn = UI.listScroll:FindFirstChild("ReqBtn_" .. State.selectedIndex)
+            if prevBtn then
+                prevBtn.BackgroundColor3 = State.requests[State.selectedIndex].interceptData and 
+                    Color3.fromRGB(50, 50, 35) or Color3.fromRGB(35, 35, 35)
+            end
+        end
+        
+        -- Set new selection
+        State.selectedIndex = idx
+        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        
+        updateDetailView()
+    end)
+    
+    return btn
+end
+
+local function refreshRequestList()
+    -- Clear existing buttons
+    for _, child in pairs(UI.listScroll:GetChildren()) do
+        if child:IsA("TextButton") and child.Name:find("ReqBtn_") then
+            child:Destroy()
+        end
+    end
+    
+    -- Create new buttons (show latest first)
+    for i = 1, math.min(#State.requests, State.maxRequests) do
+        createRequestButton(i, State.requests[i])
+    end
+    
+    updateListScroll()
+end
+
+local function addRequest(method, url, requestRaw, responseRaw, isTooLong, status, interceptData)
+    local requestEntry = {
+        method = method:upper(),
+        url = url,
+        requestRaw = requestRaw,
+        responseRaw = responseRaw,
+        isTooLong = isTooLong,
+        status = status,
+        interceptData = interceptData,
+        timestamp = os.time()
+    }
+    
+    table.insert(State.requests, 1, requestEntry)
+    
+    -- Keep only maxRequests
+    if #State.requests > State.maxRequests then
+        for i = State.maxRequests + 1, #State.requests do
+            State.requests[i] = nil
+        end
+    end
+    
+    refreshRequestList()
+end
+
+-- DOWNLOAD FUNCTION
+local function downloadCurrent()
+    if not State.selectedIndex or not State.requests[State.selectedIndex] then
+        return
+    end
+    
+    local req = State.requests[State.selectedIndex]
+    local content = State.currentTab == "request" and req.requestRaw or (req.responseRaw or "")
+    
+    if #content == 0 then
+        warn("[HTTP Monitor] No content to download")
+        return
+    end
+    
+    -- Create filename
+    local safeUrl = req.url:gsub("[^%w%.%-]", "_")
+    local timestamp = os.date("%Y%m%d_%H%M%S")
+    local filename = string.format("http_%s_%s_%s.txt", 
+        req.method, 
+        string.sub(safeUrl, 1, 30),
+        timestamp
+    )
+    
+    -- Try to save to file
+    if writefile then
+        local success, err = pcall(function()
+            writefile(filename, content)
+        end)
+        if success then
+            print(string.format("[HTTP Monitor] Saved to: %s (%d chars)", filename, #content))
+        else
+            warn("[HTTP Monitor] Failed to save file:", err)
+        end
+    end
+    
+    -- Copy to clipboard as fallback
+    if setclipboard then
+        pcall(setclipboard, content)
+        print("[HTTP Monitor] Copied to clipboard!")
+    end
+end
+
+-- INTERCEPT LOGIC
+local function interceptResponse(method, url, requestRaw, response, responseHeaders, currentSessionId)
+    if not State.interceptEnabled or currentSessionId ~= State.interceptId then
+        local responseLength = #tostring(response)
+        local isTooLong = responseLength > 1000000 -- 1MB limit
+        local responseRaw = formatResponse(response, responseHeaders, isTooLong)
+        addRequest(method, url, requestRaw, responseRaw, isTooLong, "CANCELLED")
+        return nil
+    end
+    
+    local responseLength = #tostring(response)
+    local isTooLong = responseLength > 1000000
+    local responseRaw = formatResponse(response, responseHeaders, isTooLong)
+    
+    local interceptData = {
+        method = method,
+        url = url,
+        requestRaw = requestRaw,
+        responseRaw = responseRaw,
+        originalResponse = response,
+        modifiedResponse = nil,
+        dropped = false,
+        callback = nil,
+        isTooLong = isTooLong,
+        sessionId = currentSessionId,
+        headers = responseHeaders
+    }
+    
+    addRequest(method, url, requestRaw, responseRaw, isTooLong, "PENDING", interceptData)
+    table.insert(State.interceptQueue, interceptData)
+    
+    -- Wait for user action
+    local thread = coroutine.running()
+    interceptData.callback = function()
+        coroutine.resume(thread)
+    end
+    
+    coroutine.yield()
+    
+    return interceptData
+end
+
+local function processNextIntercept()
+    while #State.interceptQueue > 0 do
+        local nextItem = State.interceptQueue[1]
+        if nextItem.sessionId == State.interceptId then
+            State.currentIntercept = nextItem
+            -- Auto-select the pending request
+            for i, req in ipairs(State.requests) do
+                if req.interceptData == nextItem then
+                    State.selectedIndex = i
+                    break
+                end
+            end
+            switchTab("response")
+            return
+        else
+            table.remove(State.interceptQueue, 1)
+        end
+    end
+    State.currentIntercept = nil
+end
+
+-- UI EVENT HANDLERS
+UI.interceptBtn.MouseButton1Click:Connect(function()
+    State.interceptEnabled = not State.interceptEnabled
+    UI.interceptBtn.Text = State.interceptEnabled and "Intercept: ON 🔴" or "Intercept: OFF"
+    UI.interceptBtn.BackgroundColor3 = State.interceptEnabled and Color3.fromRGB(80, 150, 80) or Color3.fromRGB(60, 60, 60)
+    
+    if State.interceptEnabled then
+        State.interceptId = State.interceptId + 1
+        print("[HTTP Monitor] Intercept mode ENABLED")
+    else
+        -- Clear pending intercepts
+        for _, item in ipairs(State.interceptQueue) do
+            if item.callback then
+                item.dropped = true
+                task.spawn(item.callback)
+            end
+        end
+        State.interceptQueue = {}
+        State.currentIntercept = nil
+        print("[HTTP Monitor] Intercept mode DISABLED")
+    end
+end)
+
+UI.clearBtn.MouseButton1Click:Connect(function()
+    State.requests = {}
+    State.selectedIndex = nil
+    State.interceptQueue = {}
+    State.currentIntercept = nil
+    refreshRequestList()
+    UI.detailText.Text = "Select a request to view details"
+    UI.actionFrame.Visible = false
+    print("[HTTP Monitor] Cleared all requests")
+end)
+
+UI.closeBtn.MouseButton1Click:Connect(function()
+    UI.main.Visible = false
+    print("[HTTP Monitor] UI hidden (press Home to show)")
+end)
+
+UI.requestTab.MouseButton1Click:Connect(function()
+    switchTab("request")
+end)
+
+UI.responseTab.MouseButton1Click:Connect(function()
+    switchTab("response")
+end)
+
+UI.downloadBtn.MouseButton1Click:Connect(function()
+    downloadCurrent()
+end)
+
+UI.forwardBtn.MouseButton1Click:Connect(function()
+    if not State.currentIntercept then return end
+    
+    local wasModified = false
+    if State.currentTab == "response" and not State.currentIntercept.isTooLong then
+        local newResponse = UI.detailText.Text
+        -- Remove headers if present
+        local bodyStart = newResponse:find("\r\n\r\n") or newResponse:find("\n\n")
+        if bodyStart then
+            newResponse = newResponse:sub(bodyStart + (newResponse:find("\r\n\r\n") and 4 or 2))
+        end
+        
+        if newResponse ~= tostring(State.currentIntercept.originalResponse) then
+            State.currentIntercept.modifiedResponse = newResponse
+            wasModified = true
+        end
+    end
+    
+    -- Update status
+    for i, req in ipairs(State.requests) do
+        if req.interceptData == State.currentIntercept then
+            State.requests[i].status = wasModified and "MODIFIED" or "FORWARDED"
+            State.requests[i].interceptData = nil
+            break
+        end
+    end
+    
+    -- Resume the intercepted request
+    if State.currentIntercept.callback then
+        task.spawn(State.currentIntercept.callback)
+    end
+    
+    -- Remove from queue and process next
+    table.remove(State.interceptQueue, 1)
+    State.currentIntercept = nil
+    State.selectedIndex = nil
+    processNextIntercept()
+    refreshRequestList()
+end)
+
+UI.dropBtn.MouseButton1Click:Connect(function()
+    if not State.currentIntercept then return end
+    
+    -- Update status
+    for i, req in ipairs(State.requests) do
+        if req.interceptData == State.currentIntercept then
+            State.requests[i].status = "DROPPED"
+            State.requests[i].interceptData = nil
+            break
+        end
+    end
+    
+    State.currentIntercept.dropped = true
+    
+    -- Resume with empty response
+    if State.currentIntercept.callback then
+        task.spawn(State.currentIntercept.callback)
+    end
+    
+    -- Remove from queue
+    table.remove(State.interceptQueue, 1)
+    State.currentIntercept = nil
+    State.selectedIndex = nil
+    processNextIntercept()
+    refreshRequestList()
+end)
+
+-- DRAGGING
+local dragging = false
+local dragStart, startPos
+
+UI.header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = UI.main.Position
+    end
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        UI.main.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+game:GetService("UserInputService").InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+-- HOTKEY TOGGLE
+game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.Home then
+        UI.main.Visible = not UI.main.Visible
+    end
+end)
+
+-- HOOK HTTP FUNCTIONS (SIMPLE VERSION - LESS BUGGY)
+local function createHook(originalFunc, method)
+    return function(...)
+        local url = select(2, ...) or ""
+        local requestRaw = formatRawHttp(method, url, nil, select(3, ...))
+        
+        local success, response = pcall(originalFunc, ...)
+        
+        if success then
+            local isTooLong = #tostring(response) > 1000000
+            local responseRaw = formatResponse(response, nil, isTooLong)
+            
+            if State.interceptEnabled then
+                local interceptData = interceptResponse(method, url, requestRaw, response, nil, State.interceptId)
+                
+                if interceptData then
+                    if interceptData.dropped then
+                        return ""
+                    elseif interceptData.modifiedResponse then
+                        return interceptData.modifiedResponse
+                    end
+                end
+            end
+            
+            addRequest(method, url, requestRaw, responseRaw, isTooLong)
+            return response
+        else
+            -- Log error
+            addRequest(method, url, requestRaw, "ERROR: " .. tostring(response), false, "ERROR")
+            error(response)
+        end
+    end
+end
+
+-- Hook basic HTTP functions
+local HttpService = game:GetService("HttpService")
+
+if hookfunction then
+    -- Hook game:HttpGet/HttpPost
+    local oldHttpGet; oldHttpGet = hookfunction(game.HttpGet, createHook(game.HttpGet, "GET"))
+    local oldHttpPost; oldHttpPost = hookfunction(game.HttpPost, createHook(game.HttpPost, "POST"))
+    
+    -- Hook HttpService
+    local oldGetAsync; oldGetAsync = hookfunction(HttpService.GetAsync, createHook(HttpService.GetAsync, "GET"))
+    local oldPostAsync; oldPostAsync = hookfunction(HttpService.PostAsync, createHook(HttpService.PostAsync, "POST"))
+    
+    -- Hook RequestAsync with better handling
+    local oldRequestAsync; oldRequestAsync = hookfunction(HttpService.RequestAsync, function(self, options, ...)
+        local method = options.Method or "GET"
+        local requestRaw = formatRawHttp(method, options.Url, options.Headers, options.Body)
+        
+        local success, response = pcall(oldRequestAsync, self, options, ...)
+        
+        if success and response then
+            local isTooLong = response.Body and #tostring(response.Body) > 1000000
+            local responseRaw = formatResponse(response.Body, response.Headers, isTooLong)
+            
+            if State.interceptEnabled then
+                local interceptData = interceptResponse(method, options.Url, requestRaw, response.Body, response.Headers, State.interceptId)
+                
+                if interceptData then
+                    if interceptData.dropped then
+                        return {Success = false, Body = "", StatusCode = 0, StatusMessage = "Dropped", Headers = {}}
+                    elseif interceptData.modifiedResponse then
+                        response.Body = interceptData.modifiedResponse
+                    end
+                end
+            end
+            
+            addRequest(method, options.Url, requestRaw, responseRaw, isTooLong)
+            return response
+        else
+            addRequest(method, options.Url, requestRaw, "ERROR: " .. tostring(response), false, "ERROR")
+            if not success then error(response) end
+            return response
+        end
+    end)
+end
+
+-- Hook syn.request if available
+if syn and syn.request then
+    local oldSynRequest = syn.request
+    syn.request = function(options)
+        local method = options.Method or "GET"
+        local requestRaw = formatRawHttp(method, options.Url, options.Headers, options.Body)
+        
+        local response = oldSynRequest(options)
+        
+        if response then
+            local isTooLong = response.Body and #tostring(response.Body) > 1000000
+            local responseRaw = formatResponse(response.Body, response.Headers, isTooLong)
+            
+            if State.interceptEnabled then
+                local interceptData = interceptResponse(method, options.Url, requestRaw, response.Body, response.Headers, State.interceptId)
+                
+                if interceptData then
+                    if interceptData.dropped then
+                        return {Success = false, Body = "", StatusCode = 0, StatusMessage = "Dropped", Headers = {}}
+                    elseif interceptData.modifiedResponse then
+                        response.Body = interceptData.modifiedResponse
+                    end
+                end
+            end
+            
+            addRequest(method, options.Url, requestRaw, responseRaw, isTooLong)
+        end
+        
+        return response
+    end
+end
+
+print("======================================")
+print("🚀 HTTP Monitor v3.0 STABLE LOADED!")
+print("📌 Press HOME to show/hide UI")
+print("📌 Drag header to move window")
+print("📌 Intercept: ON/OFF to toggle intercept")
+print("======================================")
+
+-- Make UI visible by default
+UI.main.Visible = true
