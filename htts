@@ -22,8 +22,8 @@ local function formatRawHttp(method, url, headers, body)
     
     if body then
         local bodyStr = tostring(body)
-        if #bodyStr > 200000 then
-            bodyStr = bodyStr:sub(1, 200000) .. "\n\n... [TRUNCATED]"
+        if #bodyStr > 500000 then
+            bodyStr = bodyStr:sub(1, 500000) .. "\n\n... [TRUNCATED]"
         end
         raw = raw .. "Content-Length: " .. #body .. "\n\n" .. bodyStr
     end
@@ -48,8 +48,8 @@ local function formatResponse(response, responseHeaders, isTooLong)
         end
     end
     
-    if #responseStr > 200000 then
-        responseStr = responseStr:sub(1, 200000) .. "\n\n... [TRUNCATED]"
+    if #responseStr > 500000 then
+        responseStr = responseStr:sub(1, 500000) .. "\n\n... [TRUNCATED]"
     end
     
     return raw .. "\n" .. responseStr
@@ -82,108 +82,108 @@ local function create(class, props)
     return obj
 end
 
--- GUI yang lebih besar
+-- GUI yang lebih kecil
 local gui = create("ScreenGui", {Name = "HttpMonitor", Parent = game:GetService("CoreGui")})
 local main = create("Frame", {
-    Size = UDim2.new(0, 1000, 0, 700), -- Ukuran lebih besar
-    Position = UDim2.new(0.5, -500, 0.5, -350), 
+    Size = UDim2.new(0, 800, 0, 550), -- Ukuran lebih kecil
+    Position = UDim2.new(0.5, -400, 0.5, -275), 
     BackgroundColor3 = Color3.fromRGB(25, 25, 25), 
     BorderSizePixel = 0, 
     Parent = gui
 })
 
 local header = create("Frame", {
-    Size = UDim2.new(1, 0, 0, 40), -- Header lebih tinggi
+    Size = UDim2.new(1, 0, 0, 35), -- Header lebih pendek
     BackgroundColor3 = Color3.fromRGB(35, 35, 35), 
     BorderSizePixel = 0, 
     Parent = main
 })
 
 local title = create("TextLabel", {
-    Size = UDim2.new(1, -400, 1, 0), 
+    Size = UDim2.new(1, -300, 1, 0), 
     Position = UDim2.new(0, 10, 0, 0),
     BackgroundTransparency = 1, 
     TextColor3 = Color3.new(1, 1, 1), 
     Font = Enum.Font.GothamBold,
-    TextSize = 16, 
+    TextSize = 14, 
     TextXAlignment = Enum.TextXAlignment.Left, 
-    Text = "HTTP Monitor v2.0", 
+    Text = "HTTP Monitor", 
     Parent = header
 })
 
--- Panel tombol header yang lebih besar
+-- Panel tombol header yang lebih kecil
 local buttonPanel = create("Frame", {
-    Size = UDim2.new(0, 380, 1, 0),
-    Position = UDim2.new(1, -390, 0, 0),
+    Size = UDim2.new(0, 290, 1, 0),
+    Position = UDim2.new(1, -295, 0, 0),
     BackgroundTransparency = 1,
     Parent = header
 })
 
 local interceptBtn = create("TextButton", {
-    Size = UDim2.new(0, 100, 0, 26), 
-    Position = UDim2.new(0, 0, 0.5, -13),
+    Size = UDim2.new(0, 80, 0, 24), 
+    Position = UDim2.new(0, 0, 0.5, -12),
     BackgroundColor3 = Color3.fromRGB(60, 60, 60), 
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold,
-    TextSize = 12, 
+    Font = Enum.Font.Gotham,
+    TextSize = 11, 
     Text = "Intercept: OFF", 
     BorderSizePixel = 0, 
     Parent = buttonPanel
 })
 
 local clearBtn = create("TextButton", {
-    Size = UDim2.new(0, 80, 0, 26), 
-    Position = UDim2.new(0, 110, 0.5, -13),
+    Size = UDim2.new(0, 60, 0, 24), 
+    Position = UDim2.new(0, 85, 0.5, -12),
     BackgroundColor3 = Color3.fromRGB(60, 60, 60), 
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold,
-    TextSize = 12, 
+    Font = Enum.Font.Gotham,
+    TextSize = 11, 
     Text = "Clear", 
     BorderSizePixel = 0, 
     Parent = buttonPanel
 })
 
 local saveBtn = create("TextButton", {
-    Size = UDim2.new(0, 80, 0, 26), 
-    Position = UDim2.new(0, 200, 0.5, -13),
+    Size = UDim2.new(0, 60, 0, 24), 
+    Position = UDim2.new(0, 150, 0.5, -12),
     BackgroundColor3 = Color3.fromRGB(60, 60, 60), 
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold,
-    TextSize = 12, 
+    Font = Enum.Font.Gotham,
+    TextSize = 11, 
     Text = "Save", 
     BorderSizePixel = 0, 
     Parent = buttonPanel
 })
 
 local toggleBtn = create("TextButton", {
-    Size = UDim2.new(0, 80, 0, 26), 
-    Position = UDim2.new(0, 290, 0.5, -13),
+    Size = UDim2.new(0, 60, 0, 24), 
+    Position = UDim2.new(0, 215, 0.5, -12),
     BackgroundColor3 = Color3.fromRGB(60, 60, 60), 
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold,
-    TextSize = 12, 
+    Font = Enum.Font.Gotham,
+    TextSize = 11, 
     Text = "Hide", 
     BorderSizePixel = 0, 
     Parent = buttonPanel
 })
 
--- Panel list request yang lebih besar
+-- Panel list request yang lebih kecil
 local listScroll = create("ScrollingFrame", {
-    Size = UDim2.new(0, 300, 1, -50), 
-    Position = UDim2.new(0, 10, 0, 45),
+    Size = UDim2.new(0, 250, 1, -40), 
+    Position = UDim2.new(0, 5, 0, 40),
     BackgroundColor3 = Color3.fromRGB(30, 30, 30), 
-    ScrollBarThickness = 8,
+    ScrollBarThickness = 6,
     BorderSizePixel = 0, 
     Parent = main
 })
 
 local requestCountLabel = create("TextLabel", {
-    Size = UDim2.new(0, 300, 0, 20),
-    Position = UDim2.new(0, 10, 1, -25),
+    Size = UDim2.new(0, 250, 0, 18),
+    Position = UDim2.new(0, 5, 1, -20),
     BackgroundColor3 = Color3.fromRGB(40, 40, 40),
     TextColor3 = Color3.new(1, 1, 1),
     Font = Enum.Font.Gotham,
-    TextSize = 12,
+    TextSize = 11,
     Text = "Requests: 0",
     TextXAlignment = Enum.TextXAlignment.Center,
     BorderSizePixel = 0,
@@ -191,8 +191,8 @@ local requestCountLabel = create("TextLabel", {
 })
 
 local tabContainer = create("Frame", {
-    Size = UDim2.new(1, -330, 0, 35), 
-    Position = UDim2.new(0, 320, 0, 45),
+    Size = UDim2.new(1, -265, 0, 30), 
+    Position = UDim2.new(0, 260, 0, 40),
     BackgroundColor3 = Color3.fromRGB(30, 30, 30), 
     BorderSizePixel = 0, 
     Parent = main
@@ -202,8 +202,8 @@ local requestTab = create("TextButton", {
     Size = UDim2.new(0.5, -2, 1, 0), 
     BackgroundColor3 = Color3.fromRGB(50, 50, 50),
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold, 
-    TextSize = 14, 
+    Font = Enum.Font.Gotham, 
+    TextSize = 12, 
     Text = "Request",
     BorderSizePixel = 0, 
     Parent = tabContainer
@@ -214,31 +214,31 @@ local responseTab = create("TextButton", {
     Position = UDim2.new(0.5, 2, 0, 0),
     BackgroundColor3 = Color3.fromRGB(40, 40, 40), 
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold,
-    TextSize = 14, 
+    Font = Enum.Font.Gotham,
+    TextSize = 12, 
     Text = "Response", 
     BorderSizePixel = 0, 
     Parent = tabContainer
 })
 
--- Detail panel yang lebih besar
+-- Detail panel yang lebih kecil
 local detailScroll = create("ScrollingFrame", {
-    Size = UDim2.new(1, -330, 1, -130), 
-    Position = UDim2.new(0, 320, 0, 85),
+    Size = UDim2.new(1, -265, 1, -110), 
+    Position = UDim2.new(0, 260, 0, 75),
     BackgroundColor3 = Color3.fromRGB(20, 20, 20), 
-    ScrollBarThickness = 8,
+    ScrollBarThickness = 6,
     BorderSizePixel = 0,
     CanvasSize = UDim2.new(2, 0, 2, 0), 
     Parent = main
 })
 
 local detailText = create("TextBox", {
-    Size = UDim2.new(1, -20, 1, 0), 
-    Position = UDim2.new(0, 10, 0, 0),
+    Size = UDim2.new(1, -10, 1, 0), 
+    Position = UDim2.new(0, 5, 0, 0),
     BackgroundTransparency = 1, 
     TextColor3 = Color3.new(1, 1, 1), 
     Font = Enum.Font.Code, 
-    TextSize = 13,
+    TextSize = 12,
     MultiLine = true, 
     TextXAlignment = Enum.TextXAlignment.Left, 
     TextYAlignment = Enum.TextYAlignment.Top,
@@ -250,8 +250,8 @@ local detailText = create("TextBox", {
 })
 
 local actionBar = create("Frame", {
-    Size = UDim2.new(1, -330, 0, 40), 
-    Position = UDim2.new(0, 320, 1, -45),
+    Size = UDim2.new(1, -265, 0, 35), 
+    Position = UDim2.new(0, 260, 1, -40),
     BackgroundColor3 = Color3.fromRGB(30, 30, 30), 
     BorderSizePixel = 0, 
     Visible = false, 
@@ -259,24 +259,24 @@ local actionBar = create("Frame", {
 })
 
 local dropBtn = create("TextButton", {
-    Size = UDim2.new(0, 120, 0, 30), 
-    Position = UDim2.new(0.5, -130, 0.5, -15),
+    Size = UDim2.new(0, 100, 0, 26), 
+    Position = UDim2.new(0.5, -105, 0.5, -13),
     BackgroundColor3 = Color3.fromRGB(150, 80, 80), 
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold,
-    TextSize = 12, 
+    Font = Enum.Font.Gotham,
+    TextSize = 11, 
     Text = "Drop Request", 
     BorderSizePixel = 0, 
     Parent = actionBar
 })
 
 local forwardBtn = create("TextButton", {
-    Size = UDim2.new(0, 120, 0, 30), 
-    Position = UDim2.new(0.5, 10, 0.5, -15),
+    Size = UDim2.new(0, 100, 0, 26), 
+    Position = UDim2.new(0.5, 5, 0.5, -13),
     BackgroundColor3 = Color3.fromRGB(80, 150, 80), 
     TextColor3 = Color3.new(1, 1, 1), 
-    Font = Enum.Font.GothamBold,
-    TextSize = 12, 
+    Font = Enum.Font.Gotham,
+    TextSize = 11, 
     Text = "Forward", 
     BorderSizePixel = 0, 
     Parent = actionBar
@@ -298,11 +298,11 @@ local function updateDetailScroll()
     for _, line in ipairs(lines) do 
         maxWidth = math.max(maxWidth, #line) 
     end
-    detailScroll.CanvasSize = UDim2.new(0, math.max(maxWidth * 8, detailScroll.AbsoluteSize.X), 0, #lines * 18)
+    detailScroll.CanvasSize = UDim2.new(0, math.max(maxWidth * 7, detailScroll.AbsoluteSize.X), 0, #lines * 16)
 end
 
 local function updateListScroll()
-    listScroll.CanvasSize = UDim2.new(0, 0, 0, #State.requests * 58)
+    listScroll.CanvasSize = UDim2.new(0, 0, 0, #State.requests * 50)
     requestCountLabel.Text = "Requests: " .. #State.requests
 end
 
@@ -329,8 +329,8 @@ end
 local function createRequestButton(idx, req)
     local bgColor = req.status == "PENDING" and Color3.fromRGB(60, 60, 40) or Color3.fromRGB(40, 40, 40)
     local btn = create("TextButton", {
-        Size = UDim2.new(1, -10, 0, 54), 
-        Position = UDim2.new(0, 5, 0, (idx - 1) * 58),
+        Size = UDim2.new(1, -5, 0, 46), 
+        Position = UDim2.new(0, 3, 0, (idx - 1) * 50),
         BackgroundColor3 = bgColor, 
         BorderSizePixel = 0, 
         Text = "", 
@@ -339,39 +339,39 @@ local function createRequestButton(idx, req)
     btn:SetAttribute("Index", idx)
     
     local statusText = req.status and req.status ~= "PENDING" and " [" .. req.status .. "]" or ""
-    local displayUrl = #req.url > 55 and req.url:sub(1, 52) .. "..." or req.url
+    local displayUrl = #req.url > 40 and req.url:sub(1, 37) .. "..." or req.url
     
     create("TextLabel", {
-        Size = UDim2.new(0, 60, 0, 22), 
+        Size = UDim2.new(0, 50, 0, 18), 
         Position = UDim2.new(0, 5, 0, 5),
         BackgroundTransparency = 1, 
         TextColor3 = req.method == "GET" and Color3.fromRGB(100, 200, 255) or Color3.fromRGB(255, 200, 100),
-        Font = Enum.Font.GothamBold, 
-        TextSize = 12, 
+        Font = Enum.Font.Gotham, 
+        TextSize = 11, 
         Text = req.method, 
         TextXAlignment = Enum.TextXAlignment.Left, 
         Parent = btn
     })
     
     create("TextLabel", {
-        Size = UDim2.new(1, -70, 0, 24), 
-        Position = UDim2.new(0, 65, 0, 5),
+        Size = UDim2.new(1, -55, 0, 18), 
+        Position = UDim2.new(0, 55, 0, 5),
         BackgroundTransparency = 1, 
         TextColor3 = Color3.fromRGB(200, 200, 200), 
-        Font = Enum.Font.GothamBold,
-        TextSize = 10, 
+        Font = Enum.Font.Gotham,
+        TextSize = 9, 
         Text = req.status or "OK", 
         TextXAlignment = Enum.TextXAlignment.Right, 
         Parent = btn
     })
     
     create("TextLabel", {
-        Size = UDim2.new(1, -10, 0, 22), 
-        Position = UDim2.new(0, 5, 0, 30),
+        Size = UDim2.new(1, -10, 0, 18), 
+        Position = UDim2.new(0, 5, 0, 25),
         BackgroundTransparency = 1, 
         TextColor3 = Color3.fromRGB(200, 200, 200), 
         Font = Enum.Font.Code, 
-        TextSize = 11,
+        TextSize = 10,
         Text = displayUrl .. statusText, 
         TextXAlignment = Enum.TextXAlignment.Left, 
         TextYAlignment = Enum.TextYAlignment.Top,
@@ -504,8 +504,8 @@ local function saveRequestToFile(index)
     local safeUrl = req.url:gsub("https?://", ""):gsub("[^%w%.%-]", "_")
     
     -- Memotong URL jika terlalu panjang
-    if #safeUrl > 50 then
-        safeUrl = safeUrl:sub(1, 50)
+    if #safeUrl > 40 then
+        safeUrl = safeUrl:sub(1, 40)
     end
     
     local filename = string.format("http_request_%s_%s_%s.txt", timestamp, safeMethod, safeUrl)
@@ -613,12 +613,12 @@ saveBtn.MouseButton1Click:Connect(function()
         if success then
             -- Tampilkan notifikasi
             local notification = create("TextLabel", {
-                Size = UDim2.new(0, 200, 0, 40),
-                Position = UDim2.new(0.5, -100, 0.5, -20),
+                Size = UDim2.new(0, 180, 0, 35),
+                Position = UDim2.new(0.5, -90, 0.5, -18),
                 BackgroundColor3 = Color3.fromRGB(50, 150, 50),
                 TextColor3 = Color3.new(1, 1, 1),
-                Font = Enum.Font.GothamBold,
-                TextSize = 14,
+                Font = Enum.Font.Gotham,
+                TextSize = 12,
                 Text = "Request saved successfully!",
                 TextXAlignment = Enum.TextXAlignment.Center,
                 Parent = main
@@ -636,12 +636,12 @@ saveBtn.MouseButton1Click:Connect(function()
         
         if success then
             local notification = create("TextLabel", {
-                Size = UDim2.new(0, 250, 0, 40),
-                Position = UDim2.new(0.5, -125, 0.5, -20),
+                Size = UDim2.new(0, 220, 0, 35),
+                Position = UDim2.new(0.5, -110, 0.5, -18),
                 BackgroundColor3 = Color3.fromRGB(50, 150, 50),
                 TextColor3 = Color3.new(1, 1, 1),
-                Font = Enum.Font.GothamBold,
-                TextSize = 14,
+                Font = Enum.Font.Gotham,
+                TextSize = 12,
                 Text = "All requests saved successfully!",
                 TextXAlignment = Enum.TextXAlignment.Center,
                 Parent = main
@@ -717,14 +717,14 @@ end)
 local function interceptResponse(method, url, requestRaw, response, responseHeaders, currentSessionId)
     if not State.interceptEnabled or currentSessionId ~= State.interceptId then
         local responseLength = #tostring(response)
-        local isTooLong = responseLength > 200000
+        local isTooLong = responseLength > 500000
         local responseRaw = formatResponse(response, responseHeaders, isTooLong)
         addRequest(method, url, requestRaw, responseRaw, isTooLong, "CANCELLED")
         return nil
     end
     
     local responseLength = #tostring(response)
-    local isTooLong = responseLength > 200000
+    local isTooLong = responseLength > 500000
     local responseRaw = formatResponse(response, responseHeaders, isTooLong)
     
     local interceptData = {
@@ -791,7 +791,7 @@ UIS.InputEnded:Connect(function(input)
     end
 end)
 
--- Hook functions tetap sama seperti sebelumnya
+-- Hook functions
 local HttpService = game:GetService("HttpService")
 
 local HttpGet
@@ -802,7 +802,7 @@ HttpGet = hookfunction(game.HttpGet, function(self, url, ...)
     
     local response = HttpGet(self, url, ...)
     local responseLength = #tostring(response)
-    local isTooLong = responseLength > 200000
+    local isTooLong = responseLength > 500000
     
     if shouldIntercept then
         local interceptData = interceptResponse("GET", url, requestRaw, response, nil, currentSessionId)
@@ -834,7 +834,7 @@ HttpPost = hookfunction(game.HttpPost, function(self, url, data, ...)
     
     local response = HttpPost(self, url, data, ...)
     local responseLength = #tostring(response)
-    local isTooLong = responseLength > 200000
+    local isTooLong = responseLength > 500000
     
     if shouldIntercept then
         local interceptData = interceptResponse("POST", url, requestRaw, response, nil, currentSessionId)
@@ -866,7 +866,7 @@ GetAsync = hookfunction(HttpService.GetAsync, function(self, url, ...)
     
     local response = GetAsync(self, url, ...)
     local responseLength = #tostring(response)
-    local isTooLong = responseLength > 200000
+    local isTooLong = responseLength > 500000
     
     if shouldIntercept then
         local interceptData = interceptResponse("GET", url, requestRaw, response, nil, currentSessionId)
@@ -898,7 +898,7 @@ PostAsync = hookfunction(HttpService.PostAsync, function(self, url, data, conten
     
     local response = PostAsync(self, url, data, contentType, compress, headers, ...)
     local responseLength = #tostring(response)
-    local isTooLong = responseLength > 200000
+    local isTooLong = responseLength > 500000
     
     if shouldIntercept then
         local interceptData = interceptResponse("POST", url, requestRaw, response, nil, currentSessionId)
@@ -933,7 +933,7 @@ RequestAsync = hookfunction(HttpService.RequestAsync, function(self, options, ..
     local responseBody = response and response.Body or nil
     local responseHeaders = response and response.Headers or nil
     local responseLength = responseBody and #tostring(responseBody) or 0
-    local isTooLong = responseLength > 200000
+    local isTooLong = responseLength > 500000
     
     if shouldIntercept and response then
         local interceptData = interceptResponse(options.Method or "GET", options.Url, requestRaw, response.Body, response.Headers, currentSessionId)
@@ -968,7 +968,7 @@ local oldHttpCall; oldHttpCall = hookmetamethod(game, "__namecall", function(sel
         
         local response = oldHttpCall(self, ...)
         local responseLength = #tostring(response)
-        local isTooLong = responseLength > 200000
+        local isTooLong = responseLength > 500000
         
         if shouldIntercept then
             local interceptData = interceptResponse("GET", url, requestRaw, response, nil, currentSessionId)
@@ -1000,7 +1000,7 @@ local oldHttpCall; oldHttpCall = hookmetamethod(game, "__namecall", function(sel
         
         local response = oldHttpCall(self, ...)
         local responseLength = #tostring(response)
-        local isTooLong = responseLength > 200000
+        local isTooLong = responseLength > 500000
         
         if shouldIntercept then
             local interceptData = interceptResponse("POST", url, requestRaw, response, nil, currentSessionId)
@@ -1039,7 +1039,7 @@ if syn and syn.request then
         local responseBody = response and response.Body or nil
         local responseHeaders = response and response.Headers or nil
         local responseLength = responseBody and #tostring(responseBody) or 0
-        local isTooLong = responseLength > 200000
+        local isTooLong = responseLength > 500000
         
         if shouldIntercept and response then
             local interceptData = interceptResponse(dat.Method or "GET", dat.Url, requestRaw, response.Body, response.Headers, currentSessionId)
@@ -1076,7 +1076,7 @@ if http and http.request then
         local responseBody = response and response.Body or nil
         local responseHeaders = response and response.Headers or nil
         local responseLength = responseBody and #tostring(responseBody) or 0
-        local isTooLong = responseLength > 200000
+        local isTooLong = responseLength > 500000
         
         if shouldIntercept and response then
             local interceptData = interceptResponse(dat.Method or "GET", dat.Url, requestRaw, response.Body, response.Headers, currentSessionId)
@@ -1113,7 +1113,7 @@ if http_request then
         local responseBody = response and response.Body or nil
         local responseHeaders = response and response.Headers or nil
         local responseLength = responseBody and #tostring(responseBody) or 0
-        local isTooLong = responseLength > 200000
+        local isTooLong = responseLength > 500000
         
         if shouldIntercept and response then
             local interceptData = interceptResponse(dat.Method or "GET", dat.Url, requestRaw, response.Body, response.Headers, currentSessionId)
@@ -1150,7 +1150,7 @@ if request then
         local responseBody = response and response.Body or nil
         local responseHeaders = response and response.Headers or nil
         local responseLength = responseBody and #tostring(responseBody) or 0
-        local isTooLong = responseLength > 200000
+        local isTooLong = responseLength > 500000
         
         if shouldIntercept and response then
             local interceptData = interceptResponse(dat.Method or "GET", dat.Url, requestRaw, response.Body, response.Headers, currentSessionId)
@@ -1174,10 +1174,3 @@ if request then
         return response
     end)
 end
-
-print("HTTP Monitor aktif! Tekan Home untuk toggle GUI")
-print("Fitur:")
-print("- GUI lebih besar (1000x700)")
-print("- Simpan request individual dengan tombol Save")
-print("- Simpan semua request dengan tombol Save tanpa seleksi")
-print("- File disimpan dengan format: http_request_TIMESTAMP_METHOD_URL.txt")
